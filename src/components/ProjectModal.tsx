@@ -33,6 +33,7 @@ import { Project, ProjectStatus, ProjectGroup, PROJECT_TYPE_COLORS, STATUS_COLOR
 import { FileTree } from './FileTree';
 import { ReadmeViewer } from './ReadmeViewer';
 import { LivePreview } from './LivePreview';
+import { GitInfo } from './GitInfo';
 
 interface ProjectModalProps {
   project: Project | null;
@@ -583,6 +584,13 @@ export function ProjectModal({
                 <div className="mt-3">
                   <ReadmeViewer projectPath={project.path} />
                 </div>
+
+                {/* Git 정보 */}
+                {project.hasGit && (
+                  <div className="mt-3">
+                    <GitInfo projectPath={project.path} />
+                  </div>
+                )}
               </div>
 
               {/* 메모 섹션 */}

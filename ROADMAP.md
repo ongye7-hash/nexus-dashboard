@@ -92,12 +92,13 @@
 ## Phase 6: Advanced
 
 ### 6.1 크로스 플랫폼
-- [ ] PWA 지원
+- [x] PWA 지원 (설치 가능, 오프라인)
 - [ ] 데스크톱 앱 (Electron)
 - [ ] 모바일 반응형
 
 ### 6.2 통합
-- [ ] GitHub 연동
+- [x] Git 연동 (커밋 히스토리, 브랜치, 상태)
+- [ ] GitHub API 연동 (PR, Issues)
 - [ ] Notion 연동
 - [ ] Figma 연동
 - [ ] Slack 알림
