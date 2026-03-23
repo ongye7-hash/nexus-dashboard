@@ -46,6 +46,8 @@ interface SidebarProps {
   groups?: ProjectGroup[];
   groupCounts?: Record<string, number>;
   onManageGroups?: () => void;
+  isMobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 const TAG_COLORS = [
@@ -84,15 +86,32 @@ const TYPE_FILTERS = [
   { id: 'html', label: 'HTML (웹페이지)', icon: Globe, color: '#e34c26' },
 ];
 
-export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], groups = [], groupCounts = {}, onManageGroups }: SidebarProps) {
+export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], groups = [], groupCounts = {}, onManageGroups, isMobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
+  const handleFilterChange = (filter: string) => {
+    onFilterChange(filter);
+    // 모바일에서 필터 선택시 사이드바 닫기
+    if (onMobileClose) {
+      onMobileClose();
+    }
+  };
+
   return (
-    <aside
-      className={`fixed left-0 top-0 h-screen bg-[#0f0f10] border-r border-[#1f1f23] z-40 transition-all duration-300 ${
-        collapsed ? 'w-16' : 'w-64'
-      }`}
-    >
+    <>
+      {/* 모바일 오버레이 */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      <aside
+        className={`fixed left-0 top-0 h-screen bg-[#0f0f10] border-r border-[#1f1f23] z-50 transition-all duration-300 ${
+          collapsed ? 'w-16' : 'w-64'
+        } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
+      >
       <div className="flex flex-col h-full">
         {/* 로고 */}
         <div className="flex items-center justify-between h-16 px-4 border-b border-[#1f1f23]">
@@ -142,7 +161,7 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
               return (
                 <button
                   key={item.id}
-                  onClick={() => onFilterChange(item.id)}
+                  onClick={() => handleFilterChange(item.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                     isActive
                       ? 'bg-zinc-800 text-white'
@@ -188,7 +207,7 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
                   return (
                     <button
                       key={item.id}
-                      onClick={() => onFilterChange(`type:${item.id}`)}
+                      onClick={() => handleFilterChange(`type:${item.id}`)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                         isActive
                           ? 'bg-zinc-800 text-white'
@@ -229,7 +248,7 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
               <div className="space-y-1">
                 {/* 그룹 없음 필터 */}
                 <button
-                  onClick={() => onFilterChange('group:none')}
+                  onClick={() => handleFilterChange('group:none')}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                     activeFilter === 'group:none'
                       ? 'bg-zinc-800 text-white'
@@ -247,7 +266,7 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
                   return (
                     <button
                       key={group.id}
-                      onClick={() => onFilterChange(`group:${group.id}`)}
+                      onClick={() => handleFilterChange(`group:${group.id}`)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                         isActive
                           ? 'bg-zinc-800 text-white'
@@ -292,7 +311,7 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
                   return (
                     <button
                       key={tag}
-                      onClick={() => onFilterChange(`tag:${tag}`)}
+                      onClick={() => handleFilterChange(`tag:${tag}`)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                         isActive
                           ? 'bg-zinc-800 text-white'
@@ -327,5 +346,6 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
         )}
       </div>
     </aside>
+    </>
   );
 }

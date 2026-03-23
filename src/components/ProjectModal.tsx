@@ -347,11 +347,11 @@ export function ProjectModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg z-50 max-h-[90vh] overflow-y-auto"
+            className="fixed inset-4 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-auto sm:w-full sm:max-w-lg z-50 max-h-[calc(100vh-2rem)] sm:max-h-[90vh] overflow-y-auto"
           >
             <div className="bg-[#18181b] border border-[#27272a] rounded-2xl shadow-2xl overflow-hidden">
               {/* 헤더 */}
-              <div className="relative p-6 border-b border-[#27272a]">
+              <div className="relative p-4 sm:p-6 border-b border-[#27272a]">
                 {/* 닫기 버튼 */}
                 <button
                   onClick={onClose}
@@ -645,7 +645,7 @@ export function ProjectModal({
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 px-1">
                   빠른 실행
                 </p>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {actions.map((action) => {
                     const Icon = action.icon;
                     return (
@@ -749,8 +749,8 @@ export function ProjectModal({
                 </div>
               </div>
 
-              {/* 하단 안내 */}
-              <div className="px-6 py-3 border-t border-[#27272a] bg-[#0f0f10]">
+              {/* 하단 안내 - 모바일에서 숨김 */}
+              <div className="hidden sm:block px-6 py-3 border-t border-[#27272a] bg-[#0f0f10]">
                 <p className="text-xs text-zinc-600 text-center">
                   <kbd className="kbd">ESC</kbd> 닫기
                 </p>

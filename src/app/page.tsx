@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Terminal,
   Code2,
+  Menu,
+  X,
 } from 'lucide-react';
 import { Project, ProjectStatus, ProjectGroup, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
 import { ProjectCard } from '@/components/ProjectCard';
@@ -37,6 +39,7 @@ export default function Home() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { showToast } = useToast();
 
   const fetchProjects = useCallback(async () => {
@@ -74,6 +77,8 @@ export default function Home() {
       if (e.key === 'Escape') {
         if (selectedProject) {
           setSelectedProject(null);
+        } else if (sidebarOpen) {
+          setSidebarOpen(false);
         } else {
           setCommandOpen(false);
         }
@@ -81,13 +86,22 @@ export default function Home() {
       }
 
       // 모달이나 팔레트가 열려있으면 다른 단축키 무시
-      if (selectedProject || commandOpen) return;
+      if (selectedProject || commandOpen || groupManagerOpen) return;
 
       // Cmd/Ctrl + K: 커맨드 팔레트
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setCommandOpen(true);
+        return;
       }
+
+      // /: 커맨드 팔레트 (vim 스타일)
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setCommandOpen(true);
+        return;
+      }
+
       // R: 새로고침
       if (e.key === 'r' && !e.metaKey && !e.ctrlKey) {
         handleRefresh();
@@ -100,11 +114,47 @@ export default function Home() {
       if (e.key === 'l' && !e.metaKey && !e.ctrlKey) {
         setViewMode('list');
       }
+
+      // 숫자 키: 빠른 필터
+      if (e.key === '1' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter('all');
+      }
+      if (e.key === '2' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter('pinned');
+      }
+      if (e.key === '3' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter('recent');
+      }
+      if (e.key === '4' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter('active');
+      }
+      if (e.key === '5' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter('deployed');
+      }
+
+      // S: 정렬 모드 순환
+      if (e.key === 's' && !e.metaKey && !e.ctrlKey) {
+        setSortMode((prev) => {
+          const modes: SortMode[] = ['recent', 'lastOpened', 'name', 'type'];
+          const currentIndex = modes.indexOf(prev);
+          return modes[(currentIndex + 1) % modes.length];
+        });
+      }
+
+      // P: 즐겨찾기 필터 토글
+      if (e.key === 'p' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter((prev) => prev === 'pinned' ? 'all' : 'pinned');
+      }
+
+      // A: 전체 프로젝트
+      if (e.key === 'a' && !e.metaKey && !e.ctrlKey) {
+        setActiveFilter('all');
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandOpen, selectedProject]);
+  }, [commandOpen, selectedProject, sidebarOpen, groupManagerOpen]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -435,18 +485,28 @@ export default function Home() {
         groups={groups}
         groupCounts={groupCounts}
         onManageGroups={() => setGroupManagerOpen(true)}
+        isMobileOpen={sidebarOpen}
+        onMobileClose={() => setSidebarOpen(false)}
       />
 
-      <main className="ml-64 min-h-screen">
+      <main className="lg:ml-64 min-h-screen">
         {/* 헤더 */}
         <header className="sticky top-0 z-30 bg-[#09090b]/80 backdrop-blur-xl border-b border-[#1f1f23]">
-          <div className="flex items-center justify-between h-16 px-8">
-            <div className="flex items-center gap-6">
+          <div className="flex items-center justify-between h-16 px-4 lg:px-8">
+            <div className="flex items-center gap-4 lg:gap-6">
+              {/* 모바일 메뉴 버튼 */}
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+
               <div>
-                <h1 className="text-lg font-semibold text-white">
+                <h1 className="text-base lg:text-lg font-semibold text-white">
                   {getFilterTitle()}
                 </h1>
-                <p className="text-sm text-zinc-500">
+                <p className="text-xs lg:text-sm text-zinc-500">
                   {sortedProjects.length}개 프로젝트
                 </p>
               </div>
@@ -483,7 +543,7 @@ export default function Home() {
               <select
                 value={sortMode}
                 onChange={(e) => setSortMode(e.target.value as SortMode)}
-                className="h-9 px-3 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 outline-none focus:border-indigo-500 cursor-pointer"
+                className="hidden sm:block h-9 px-3 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 outline-none focus:border-indigo-500 cursor-pointer"
               >
                 <option value="recent">최근 수정순</option>
                 <option value="lastOpened">최근 열어본 순</option>
@@ -495,21 +555,22 @@ export default function Home() {
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="flex items-center gap-2 h-9 px-4 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 hover:bg-[#27272a] hover:border-[#3f3f46] transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 h-9 px-3 lg:px-4 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 hover:bg-[#27272a] hover:border-[#3f3f46] transition-colors disabled:opacity-50"
               >
                 <RefreshCw
                   className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
                 />
-                <span>새로고침</span>
+                <span className="hidden sm:inline">새로고침</span>
               </button>
 
               {/* 커맨드 팔레트 버튼 */}
               <button
                 onClick={() => setCommandOpen(true)}
-                className="flex items-center gap-3 h-9 px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white font-medium transition-colors"
+                className="flex items-center gap-2 lg:gap-3 h-9 px-3 lg:px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white font-medium transition-colors"
               >
-                <span>명령 실행</span>
-                <span className="flex gap-1">
+                <span className="hidden sm:inline">명령 실행</span>
+                <span className="sm:hidden">검색</span>
+                <span className="hidden lg:flex gap-1">
                   <kbd className="px-1.5 py-0.5 bg-indigo-500/50 rounded text-xs">Ctrl</kbd>
                   <kbd className="px-1.5 py-0.5 bg-indigo-500/50 rounded text-xs">K</kbd>
                 </span>
@@ -519,49 +580,49 @@ export default function Home() {
         </header>
 
         {/* 통계 바 */}
-        <div className="px-8 py-6 border-b border-[#1f1f23]">
-          <div className="grid grid-cols-4 gap-4">
-            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
-              <div className="p-3 bg-indigo-500/10 rounded-lg">
-                <FolderOpen className="w-5 h-5 text-indigo-400" />
+        <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[#1f1f23]">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <div className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-2 lg:p-3 bg-indigo-500/10 rounded-lg">
+                <FolderOpen className="w-4 h-4 lg:w-5 lg:h-5 text-indigo-400" />
               </div>
               <div>
-                <p className="text-2xl font-semibold text-white">{stats.total}</p>
-                <p className="text-sm text-zinc-500">전체 프로젝트</p>
+                <p className="text-xl lg:text-2xl font-semibold text-white">{stats.total}</p>
+                <p className="text-xs lg:text-sm text-zinc-500">전체</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
-              <div className="p-3 bg-green-500/10 rounded-lg">
-                <Zap className="w-5 h-5 text-green-400" />
+            <div className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-2 lg:p-3 bg-green-500/10 rounded-lg">
+                <Zap className="w-4 h-4 lg:w-5 lg:h-5 text-green-400" />
               </div>
               <div>
-                <p className="text-2xl font-semibold text-white">{stats.active}</p>
-                <p className="text-sm text-zinc-500">활성</p>
+                <p className="text-xl lg:text-2xl font-semibold text-white">{stats.active}</p>
+                <p className="text-xs lg:text-sm text-zinc-500">활성</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
-              <div className="p-3 bg-purple-500/10 rounded-lg">
-                <ExternalLink className="w-5 h-5 text-purple-400" />
+            <div className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-2 lg:p-3 bg-purple-500/10 rounded-lg">
+                <ExternalLink className="w-4 h-4 lg:w-5 lg:h-5 text-purple-400" />
               </div>
               <div>
-                <p className="text-2xl font-semibold text-white">{stats.deployed}</p>
-                <p className="text-sm text-zinc-500">배포됨</p>
+                <p className="text-xl lg:text-2xl font-semibold text-white">{stats.deployed}</p>
+                <p className="text-xs lg:text-sm text-zinc-500">배포됨</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
-              <div className="p-3 bg-amber-500/10 rounded-lg">
-                <Clock className="w-5 h-5 text-amber-400" />
+            <div className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-2 lg:p-3 bg-amber-500/10 rounded-lg">
+                <Clock className="w-4 h-4 lg:w-5 lg:h-5 text-amber-400" />
               </div>
               <div>
-                <p className="text-2xl font-semibold text-white">{stats.recent}</p>
-                <p className="text-sm text-zinc-500">이번 주</p>
+                <p className="text-xl lg:text-2xl font-semibold text-white">{stats.recent}</p>
+                <p className="text-xs lg:text-sm text-zinc-500">이번 주</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* 프로젝트 그리드 */}
-        <div className="p-8">
+        <div className="p-4 lg:p-8">
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {[...Array(6)].map((_, i) => (
@@ -607,22 +668,24 @@ export default function Home() {
                     exit={{ opacity: 0, x: 20 }}
                     transition={{ duration: 0.2, delay: index * 0.03 }}
                     onClick={() => handleOpenProject(project)}
-                    className="flex items-center gap-4 p-4 bg-[#18181b] border border-[#27272a] rounded-xl cursor-pointer hover:bg-[#1f1f23] hover:border-[#3f3f46] transition-colors"
+                    className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] border border-[#27272a] rounded-xl cursor-pointer hover:bg-[#1f1f23] hover:border-[#3f3f46] transition-colors"
                   >
-                    <div className="flex items-center justify-center w-10 h-10 bg-zinc-800 rounded-lg">
-                      <Code2 className="w-5 h-5 text-zinc-400" />
+                    <div className="flex items-center justify-center w-8 h-8 lg:w-10 lg:h-10 bg-zinc-800 rounded-lg flex-shrink-0">
+                      <Code2 className="w-4 h-4 lg:w-5 lg:h-5 text-zinc-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-white truncate">{project.name}</h3>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <h3 className="text-sm lg:text-base font-medium text-white truncate">{project.name}</h3>
+                      <div className="flex items-center gap-1.5 lg:gap-2 mt-1 flex-wrap">
                         {project.framework && (
-                          <span className="text-xs text-zinc-500">{project.framework}</span>
+                          <span className="text-[10px] lg:text-xs text-zinc-500">{project.framework}</span>
                         )}
-                        {project.techStack.slice(0, 3).map((tech) => (
-                          <span key={tech} className="px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400 rounded">
-                            {tech}
-                          </span>
-                        ))}
+                        <span className="hidden sm:flex items-center gap-1.5">
+                          {project.techStack.slice(0, 3).map((tech) => (
+                            <span key={tech} className="px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400 rounded">
+                              {tech}
+                            </span>
+                          ))}
+                        </span>
                         {project.tags && project.tags.slice(0, 2).map((tag) => (
                           <span key={tag} className="px-1.5 py-0.5 text-[10px] bg-indigo-500/20 text-indigo-400 rounded">
                             #{tag}
@@ -630,8 +693,8 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-zinc-500">
-                      <span>{project.lastModifiedRelative}</span>
+                    <div className="flex items-center gap-2 lg:gap-4 text-xs lg:text-sm text-zinc-500 flex-shrink-0">
+                      <span className="hidden sm:inline">{project.lastModifiedRelative}</span>
                       <span
                         className="w-2 h-2 rounded-full"
                         style={{ backgroundColor: STATUS_COLORS[project.status] }}
@@ -644,20 +707,22 @@ export default function Home() {
           )}
         </div>
 
-        {/* 키보드 단축키 힌트 */}
-        <div className="fixed bottom-6 right-6 flex items-center gap-4 px-4 py-2 bg-[#18181b]/90 backdrop-blur border border-[#27272a] rounded-lg text-xs text-zinc-500">
+        {/* 키보드 단축키 힌트 - 모바일에서 숨김 */}
+        <div className="hidden md:flex fixed bottom-6 right-6 items-center gap-3 px-4 py-2 bg-[#18181b]/90 backdrop-blur border border-[#27272a] rounded-lg text-xs text-zinc-500">
           <span className="flex items-center gap-1.5">
-            <kbd className="kbd">G</kbd> 그리드
+            <kbd className="kbd">/</kbd> 검색
           </span>
           <span className="flex items-center gap-1.5">
-            <kbd className="kbd">L</kbd> 리스트
+            <kbd className="kbd">1-5</kbd> 필터
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">G</kbd>/<kbd className="kbd">L</kbd> 뷰
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">S</kbd> 정렬
           </span>
           <span className="flex items-center gap-1.5">
             <kbd className="kbd">R</kbd> 새로고침
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="kbd">Ctrl</kbd>
-            <kbd className="kbd">K</kbd> 명령
           </span>
         </div>
       </main>

@@ -116,7 +116,7 @@ export function CommandPalette({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: -10 }}
             transition={{ duration: 0.15 }}
-            className="fixed top-[15%] left-1/2 -translate-x-1/2 w-full max-w-2xl z-50"
+            className="fixed top-4 sm:top-[15%] left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 w-auto sm:w-full sm:max-w-2xl z-50"
           >
             <Command
               className="bg-[#18181b] border border-[#27272a] rounded-xl shadow-2xl overflow-hidden"
@@ -140,7 +140,7 @@ export function CommandPalette({
                     {searchMode.label}
                   </span>
                 )}
-                <kbd className="kbd">ESC</kbd>
+                <kbd className="kbd hidden sm:inline-block">ESC</kbd>
               </div>
 
               {/* 결과 목록 */}
@@ -157,7 +157,7 @@ export function CommandPalette({
                   >
                     <RefreshCw className="w-4 h-4 text-zinc-500" />
                     <span>프로젝트 새로고침</span>
-                    <span className="ml-auto text-xs text-zinc-600">
+                    <span className="ml-auto text-xs text-zinc-600 hidden sm:block">
                       <kbd className="kbd">R</kbd>
                     </span>
                   </Command.Item>
@@ -166,7 +166,7 @@ export function CommandPalette({
                   >
                     <Filter className="w-4 h-4 text-zinc-500" />
                     <span>타입별 필터</span>
-                    <span className="ml-auto text-xs text-zinc-600">
+                    <span className="ml-auto text-xs text-zinc-600 hidden sm:block">
                       <kbd className="kbd">F</kbd>
                     </span>
                   </Command.Item>
@@ -175,7 +175,7 @@ export function CommandPalette({
                   >
                     <SortAsc className="w-4 h-4 text-zinc-500" />
                     <span>정렬 변경</span>
-                    <span className="ml-auto text-xs text-zinc-600">
+                    <span className="ml-auto text-xs text-zinc-600 hidden sm:block">
                       <kbd className="kbd">S</kbd>
                     </span>
                   </Command.Item>
@@ -184,7 +184,7 @@ export function CommandPalette({
                   >
                     <Terminal className="w-4 h-4 text-zinc-500" />
                     <span>터미널 열기</span>
-                    <span className="ml-auto text-xs text-zinc-600">
+                    <span className="ml-auto text-xs text-zinc-600 hidden sm:block">
                       <kbd className="kbd">T</kbd>
                     </span>
                   </Command.Item>
@@ -247,7 +247,7 @@ export function CommandPalette({
 
               {/* 하단 안내 */}
               <div className="flex items-center justify-between px-4 py-3 border-t border-[#27272a] text-xs text-zinc-500">
-                <div className="flex items-center gap-3">
+                <div className="hidden sm:flex items-center gap-3">
                   <span className="flex items-center gap-1">
                     <kbd className="kbd">#</kbd>
                     <span className="text-purple-400">태그</span>
