@@ -1,65 +1,702 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  RefreshCw,
+  Grid3X3,
+  List,
+  SortAsc,
+  Clock,
+  Zap,
+  TrendingUp,
+  FolderOpen,
+  ExternalLink,
+  Terminal,
+  Code2,
+} from 'lucide-react';
+import { Project, ProjectStatus, ProjectGroup, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
+import { ProjectCard } from '@/components/ProjectCard';
+import { CommandPalette } from '@/components/CommandPalette';
+import { Sidebar } from '@/components/Sidebar';
+import { ProjectModal } from '@/components/ProjectModal';
+import { GroupManager } from '@/components/GroupManager';
+import { useToast } from '@/components/Toast';
+
+type ViewMode = 'grid' | 'list';
+type SortMode = 'recent' | 'lastOpened' | 'name' | 'type';
 
 export default function Home() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [groups, setGroups] = useState<ProjectGroup[]>([]);
+  const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const { showToast } = useToast();
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects');
+      const data = await res.json();
+      setProjects(data.projects || []);
+    } catch (error) {
+      console.error('프로젝트 로드 실패:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const res = await fetch('/api/groups');
+      const data = await res.json();
+      setGroups(data.groups || []);
+    } catch (error) {
+      console.error('그룹 로드 실패:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProjects();
+    fetchGroups();
+  }, [fetchProjects, fetchGroups]);
+
+  // 키보드 단축키
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape: 모달/팔레트 닫기
+      if (e.key === 'Escape') {
+        if (selectedProject) {
+          setSelectedProject(null);
+        } else {
+          setCommandOpen(false);
+        }
+        return;
+      }
+
+      // 모달이나 팔레트가 열려있으면 다른 단축키 무시
+      if (selectedProject || commandOpen) return;
+
+      // Cmd/Ctrl + K: 커맨드 팔레트
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandOpen(true);
+      }
+      // R: 새로고침
+      if (e.key === 'r' && !e.metaKey && !e.ctrlKey) {
+        handleRefresh();
+      }
+      // G: 그리드 뷰
+      if (e.key === 'g' && !e.metaKey && !e.ctrlKey) {
+        setViewMode('grid');
+      }
+      // L: 리스트 뷰
+      if (e.key === 'l' && !e.metaKey && !e.ctrlKey) {
+        setViewMode('list');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [commandOpen, selectedProject]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchProjects();
+  };
+
+  // 액션 실행 함수 (lastOpened 업데이트 포함)
+  const executeAction = async (action: string, path: string, successMessage: string, projectName?: string) => {
+    try {
+      const res = await fetch('/api/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, path }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(successMessage, 'success');
+
+        // lastOpened 업데이트
+        if (projectName) {
+          const now = new Date().toISOString();
+          setProjects((prev) =>
+            prev.map((p) =>
+              p.name === projectName ? { ...p, lastOpened: now } : p
+            )
+          );
+          // 백엔드에도 저장
+          fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectName,
+              updates: { lastOpened: now },
+            }),
+          }).catch(console.error);
+        }
+      } else {
+        showToast(data.error || '실행에 실패했습니다', 'error');
+      }
+    } catch (error) {
+      showToast('액션 실행에 실패했습니다', 'error');
+    }
+  };
+
+  const handleOpenProject = (project: Project) => {
+    setSelectedProject(project);
+  };
+
+  const handleOpenFolder = (project: Project) => {
+    executeAction('openFolder', project.path, `📁 ${project.name} 폴더를 열었습니다`, project.name);
+    setSelectedProject(null);
+  };
+
+  const handleOpenVSCode = (project: Project) => {
+    executeAction('openVSCode', project.path, `💻 ${project.name}을(를) VSCode로 열었습니다`, project.name);
+    setSelectedProject(null);
+  };
+
+  const handleRunProject = (project: Project) => {
+    executeAction('runProject', project.path, `▶️ ${project.name} 프로젝트를 실행했습니다`, project.name);
+    setSelectedProject(null);
+  };
+
+  const handleOpenTerminal = (project: Project) => {
+    executeAction('openTerminal', project.path, `🖥️ ${project.name} 터미널을 열었습니다`, project.name);
+    setSelectedProject(null);
+  };
+
+  const handleUpdateMemo = (projectName: string, memo: string) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.name === projectName ? { ...p, description: memo } : p
+      )
+    );
+    showToast(`📝 ${projectName} 메모가 저장되었습니다`, 'success');
+  };
+
+  const handleUpdateTags = (projectName: string, tags: string[]) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.name === projectName ? { ...p, tags } : p
+      )
+    );
+    showToast(`🏷️ ${projectName} 태그가 업데이트되었습니다`, 'success');
+  };
+
+  const handleUpdateStatus = (projectName: string, status: ProjectStatus) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.name === projectName ? { ...p, status } : p
+      )
+    );
+    const statusLabels: Record<ProjectStatus, string> = {
+      development: '개발중',
+      active: '활성',
+      deployed: '배포됨',
+      archived: '보관됨',
+    };
+    showToast(`📊 ${projectName} 상태가 "${statusLabels[status]}"(으)로 변경되었습니다`, 'success');
+  };
+
+  const handleUpdateDeployUrl = (projectName: string, deployUrl: string) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.name === projectName ? { ...p, deployUrl: deployUrl || undefined } : p
+      )
+    );
+    if (deployUrl) {
+      showToast(`🌐 ${projectName} 배포 URL이 설정되었습니다`, 'success');
+    } else {
+      showToast(`🌐 ${projectName} 배포 URL이 삭제되었습니다`, 'info');
+    }
+  };
+
+  const handleTogglePin = async (project: Project) => {
+    const newPinned = !project.pinned;
+
+    // Update local state immediately
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.name === project.name ? { ...p, pinned: newPinned } : p
+      )
+    );
+
+    // Save to backend
+    try {
+      await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectName: project.name,
+          updates: { pinned: newPinned },
+        }),
+      });
+      showToast(
+        newPinned ? `⭐ ${project.name} 즐겨찾기에 추가됨` : `${project.name} 즐겨찾기 해제`,
+        'success'
+      );
+    } catch (error) {
+      console.error('핀 저장 실패:', error);
+    }
+  };
+
+  const handleUpdateGroup = (projectName: string, groupId: string | undefined) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.name === projectName ? { ...p, group: groupId } : p
+      )
+    );
+    const groupName = groups.find((g) => g.id === groupId)?.name || '미분류';
+    showToast(`📁 ${projectName}이(가) "${groupName}" 그룹으로 이동했습니다`, 'success');
+  };
+
+  // 그룹 관리 함수들
+  const handleCreateGroup = async (group: Omit<ProjectGroup, 'id' | 'order'>) => {
+    try {
+      const res = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', group }),
+      });
+      const data = await res.json();
+      if (data.success && data.group) {
+        setGroups((prev) => [...prev, data.group]);
+        showToast(`📁 "${group.name}" 그룹이 생성되었습니다`, 'success');
+      }
+    } catch (error) {
+      console.error('그룹 생성 실패:', error);
+    }
+  };
+
+  const handleUpdateGroupData = async (groupId: string, updates: Partial<ProjectGroup>) => {
+    try {
+      await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', groupId, group: updates }),
+      });
+      setGroups((prev) =>
+        prev.map((g) => (g.id === groupId ? { ...g, ...updates } : g))
+      );
+    } catch (error) {
+      console.error('그룹 수정 실패:', error);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', groupId }),
+      });
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      // 해당 그룹의 프로젝트들을 미분류로 이동
+      setProjects((prev) =>
+        prev.map((p) => (p.group === groupId ? { ...p, group: undefined } : p))
+      );
+      showToast('그룹이 삭제되었습니다', 'success');
+    } catch (error) {
+      console.error('그룹 삭제 실패:', error);
+    }
+  };
+
+  // 모든 태그 수집 (중복 제거)
+  const allTags = Array.from(
+    new Set(projects.flatMap((p) => p.tags || []))
+  ).sort();
+
+  // 그룹별 프로젝트 수 계산
+  const groupCounts: Record<string, number> = {
+    none: projects.filter((p) => !p.group).length,
+  };
+  groups.forEach((group) => {
+    groupCounts[group.id] = projects.filter((p) => p.group === group.id).length;
+  });
+
+  // 프로젝트 필터링
+  const filteredProjects = projects.filter((p) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'pinned') return p.pinned;
+    if (activeFilter === 'recent') {
+      const lastMod = new Date(p.lastModified);
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return lastMod > weekAgo;
+    }
+    if (activeFilter === 'active') return p.status === 'active' || p.status === 'development';
+    if (activeFilter === 'deployed') return p.status === 'deployed';
+    if (activeFilter === 'archived') return p.status === 'archived';
+    if (activeFilter.startsWith('type:')) {
+      const type = activeFilter.replace('type:', '');
+      return p.type === type;
+    }
+    if (activeFilter.startsWith('tag:')) {
+      const tag = activeFilter.replace('tag:', '');
+      return p.tags?.includes(tag);
+    }
+    if (activeFilter.startsWith('group:')) {
+      const groupId = activeFilter.replace('group:', '');
+      if (groupId === 'none') return !p.group;
+      return p.group === groupId;
+    }
+    return true;
+  });
+
+  // 프로젝트 정렬 (핀된 프로젝트 우선)
+  const sortedProjects = [...filteredProjects].sort((a, b) => {
+    // 핀된 프로젝트가 항상 먼저 (즐겨찾기 필터가 아닌 경우)
+    if (activeFilter !== 'pinned') {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+    }
+
+    if (sortMode === 'recent') {
+      return new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime();
+    }
+    if (sortMode === 'lastOpened') {
+      // 열어본 적 없는 프로젝트는 뒤로
+      if (!a.lastOpened && !b.lastOpened) return 0;
+      if (!a.lastOpened) return 1;
+      if (!b.lastOpened) return -1;
+      return new Date(b.lastOpened).getTime() - new Date(a.lastOpened).getTime();
+    }
+    if (sortMode === 'name') {
+      return a.name.localeCompare(b.name);
+    }
+    if (sortMode === 'type') {
+      return a.type.localeCompare(b.type);
+    }
+    return 0;
+  });
+
+  // 통계
+  const stats = {
+    total: projects.length,
+    active: projects.filter((p) => p.status === 'active' || p.status === 'development').length,
+    deployed: projects.filter((p) => p.status === 'deployed').length,
+    recent: projects.filter((p) => {
+      const lastMod = new Date(p.lastModified);
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return lastMod > weekAgo;
+    }).length,
+    pinned: projects.filter((p) => p.pinned).length,
+  };
+
+  const getFilterTitle = () => {
+    switch (activeFilter) {
+      case 'all': return '전체 프로젝트';
+      case 'pinned': return '즐겨찾기';
+      case 'recent': return '최근 작업';
+      case 'active': return '활성 프로젝트';
+      case 'deployed': return '배포된 프로젝트';
+      case 'archived': return '보관됨';
+      default:
+        if (activeFilter.startsWith('type:')) {
+          const type = activeFilter.replace('type:', '');
+          const labels: Record<string, string> = {
+            nextjs: 'Next.js',
+            react: 'React (리액트)',
+            python: 'Python (파이썬)',
+            html: 'HTML (웹페이지)',
+          };
+          return labels[type] || type.toUpperCase();
+        }
+        if (activeFilter.startsWith('tag:')) {
+          const tag = activeFilter.replace('tag:', '');
+          return `#${tag} 태그`;
+        }
+        if (activeFilter.startsWith('group:')) {
+          const groupId = activeFilter.replace('group:', '');
+          if (groupId === 'none') return '미분류';
+          const group = groups.find((g) => g.id === groupId);
+          return group ? group.name : '그룹';
+        }
+        return '프로젝트';
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <>
+      <Sidebar
+        activeFilter={activeFilter}
+        onFilterChange={setActiveFilter}
+        stats={stats}
+        allTags={allTags}
+        groups={groups}
+        groupCounts={groupCounts}
+        onManageGroups={() => setGroupManagerOpen(true)}
+      />
+
+      <main className="ml-64 min-h-screen">
+        {/* 헤더 */}
+        <header className="sticky top-0 z-30 bg-[#09090b]/80 backdrop-blur-xl border-b border-[#1f1f23]">
+          <div className="flex items-center justify-between h-16 px-8">
+            <div className="flex items-center gap-6">
+              <div>
+                <h1 className="text-lg font-semibold text-white">
+                  {getFilterTitle()}
+                </h1>
+                <p className="text-sm text-zinc-500">
+                  {sortedProjects.length}개 프로젝트
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* 뷰 모드 전환 */}
+              <div className="flex items-center bg-[#18181b] rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-md transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-zinc-700 text-white'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                  title="그리드 뷰 (G)"
+                >
+                  <Grid3X3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-md transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-zinc-700 text-white'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                  title="리스트 뷰 (L)"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 정렬 */}
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+                className="h-9 px-3 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="recent">최근 수정순</option>
+                <option value="lastOpened">최근 열어본 순</option>
+                <option value="name">이름순</option>
+                <option value="type">타입순</option>
+              </select>
+
+              {/* 새로고침 */}
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-2 h-9 px-4 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 hover:bg-[#27272a] hover:border-[#3f3f46] transition-colors disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+                />
+                <span>새로고침</span>
+              </button>
+
+              {/* 커맨드 팔레트 버튼 */}
+              <button
+                onClick={() => setCommandOpen(true)}
+                className="flex items-center gap-3 h-9 px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white font-medium transition-colors"
+              >
+                <span>명령 실행</span>
+                <span className="flex gap-1">
+                  <kbd className="px-1.5 py-0.5 bg-indigo-500/50 rounded text-xs">Ctrl</kbd>
+                  <kbd className="px-1.5 py-0.5 bg-indigo-500/50 rounded text-xs">K</kbd>
+                </span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* 통계 바 */}
+        <div className="px-8 py-6 border-b border-[#1f1f23]">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-3 bg-indigo-500/10 rounded-lg">
+                <FolderOpen className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-white">{stats.total}</p>
+                <p className="text-sm text-zinc-500">전체 프로젝트</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-3 bg-green-500/10 rounded-lg">
+                <Zap className="w-5 h-5 text-green-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-white">{stats.active}</p>
+                <p className="text-sm text-zinc-500">활성</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-3 bg-purple-500/10 rounded-lg">
+                <ExternalLink className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-white">{stats.deployed}</p>
+                <p className="text-sm text-zinc-500">배포됨</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
+              <div className="p-3 bg-amber-500/10 rounded-lg">
+                <Clock className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-white">{stats.recent}</p>
+                <p className="text-sm text-zinc-500">이번 주</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* 프로젝트 그리드 */}
+        <div className="p-8">
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[...Array(6)].map((_, i) => (
+                <div
+                  key={`skeleton-${i}`}
+                  className="h-48 bg-[#18181b] rounded-xl border border-[#27272a] animate-pulse"
+                />
+              ))}
+            </div>
+          ) : sortedProjects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <FolderOpen className="w-12 h-12 text-zinc-600 mb-4" />
+              <h3 className="text-lg font-medium text-zinc-300 mb-2">
+                프로젝트가 없습니다
+              </h3>
+              <p className="text-sm text-zinc-500 max-w-md">
+                현재 필터에 맞는 프로젝트가 없습니다. 필터를 변경하거나 바탕화면에 새 프로젝트를 추가해보세요.
+              </p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <AnimatePresence mode="popLayout">
+                {sortedProjects.map((project, index) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    index={index}
+                    onOpen={handleOpenProject}
+                    onRun={handleRunProject}
+                    onTogglePin={handleTogglePin}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
+                {sortedProjects.map((project, index) => (
+                  <motion.div
+                    key={project.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    transition={{ duration: 0.2, delay: index * 0.03 }}
+                    onClick={() => handleOpenProject(project)}
+                    className="flex items-center gap-4 p-4 bg-[#18181b] border border-[#27272a] rounded-xl cursor-pointer hover:bg-[#1f1f23] hover:border-[#3f3f46] transition-colors"
+                  >
+                    <div className="flex items-center justify-center w-10 h-10 bg-zinc-800 rounded-lg">
+                      <Code2 className="w-5 h-5 text-zinc-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-white truncate">{project.name}</h3>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {project.framework && (
+                          <span className="text-xs text-zinc-500">{project.framework}</span>
+                        )}
+                        {project.techStack.slice(0, 3).map((tech) => (
+                          <span key={tech} className="px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400 rounded">
+                            {tech}
+                          </span>
+                        ))}
+                        {project.tags && project.tags.slice(0, 2).map((tag) => (
+                          <span key={tag} className="px-1.5 py-0.5 text-[10px] bg-indigo-500/20 text-indigo-400 rounded">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-zinc-500">
+                      <span>{project.lastModifiedRelative}</span>
+                      <span
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: STATUS_COLORS[project.status] }}
+                      />
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+
+        {/* 키보드 단축키 힌트 */}
+        <div className="fixed bottom-6 right-6 flex items-center gap-4 px-4 py-2 bg-[#18181b]/90 backdrop-blur border border-[#27272a] rounded-lg text-xs text-zinc-500">
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">G</kbd> 그리드
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">L</kbd> 리스트
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">R</kbd> 새로고침
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="kbd">Ctrl</kbd>
+            <kbd className="kbd">K</kbd> 명령
+          </span>
         </div>
       </main>
-    </div>
+
+      {/* 커맨드 팔레트 */}
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        projects={projects}
+        onSelectProject={handleOpenProject}
+        onRunProject={handleRunProject}
+        onRefresh={handleRefresh}
+      />
+
+      {/* 프로젝트 상세 모달 */}
+      <ProjectModal
+        project={selectedProject}
+        onClose={() => setSelectedProject(null)}
+        onOpenFolder={handleOpenFolder}
+        onOpenVSCode={handleOpenVSCode}
+        onRunProject={handleRunProject}
+        onOpenTerminal={handleOpenTerminal}
+        onUpdateMemo={handleUpdateMemo}
+        onUpdateTags={handleUpdateTags}
+        onUpdateStatus={handleUpdateStatus}
+        onUpdateDeployUrl={handleUpdateDeployUrl}
+        groups={groups}
+        onUpdateGroup={handleUpdateGroup}
+      />
+
+      {/* 그룹 관리 모달 */}
+      <GroupManager
+        open={groupManagerOpen}
+        onClose={() => setGroupManagerOpen(false)}
+        groups={groups}
+        onCreateGroup={handleCreateGroup}
+        onUpdateGroup={handleUpdateGroupData}
+        onDeleteGroup={handleDeleteGroup}
+      />
+    </>
   );
 }
