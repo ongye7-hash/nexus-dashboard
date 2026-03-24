@@ -26,6 +26,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { ProjectModal } from '@/components/ProjectModal';
 import { GroupManager } from '@/components/GroupManager';
 import { GitHubSettings } from '@/components/GitHubSettings';
+import { VPSSettings } from '@/components/VPSSettings';
 import { MorningCodex } from '@/components/MorningCodex';
 import { CodeSearch } from '@/components/CodeSearch';
 import { useToast } from '@/components/Toast';
@@ -51,6 +52,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [codeSearchOpen, setCodeSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [vpsSettingsOpen, setVPSSettingsOpen] = useState(false);
   const [globalTerminalOpen, setGlobalTerminalOpen] = useState(false);
   const { showToast } = useToast();
   const easterEggs = useEasterEggs();
@@ -437,6 +439,7 @@ export default function Home() {
     if (activeFilter === 'deployed') return p.status === 'deployed';
     if (activeFilter === 'archived') return p.status === 'archived';
     if (activeFilter === 'github') return !!p.githubUrl;
+    if (activeFilter === 'vps') return false; // VPS 프로젝트는 Phase 3에서 추가
     if (activeFilter.startsWith('type:')) {
       const type = activeFilter.replace('type:', '');
       return p.type === type;
@@ -548,6 +551,7 @@ export default function Home() {
         isMobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenVPSSettings={() => setVPSSettingsOpen(true)}
       />
 
       <main className="lg:ml-64 min-h-screen">
@@ -900,6 +904,12 @@ export default function Home() {
       <GitHubSettings
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+      />
+
+      {/* VPS 설정 */}
+      <VPSSettings
+        open={vpsSettingsOpen}
+        onClose={() => setVPSSettingsOpen(false)}
       />
 
       {/* 이스터에그 효과 */}

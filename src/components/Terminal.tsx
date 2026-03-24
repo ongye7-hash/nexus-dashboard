@@ -12,9 +12,12 @@ interface TerminalProps {
   autoCommand?: string;
   onClose?: () => void;
   className?: string;
+  mode?: 'local' | 'ssh';
+  serverId?: string;
+  tmuxSession?: string;
 }
 
-export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '' }: TerminalProps) {
+export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '', mode, serverId, tmuxSession }: TerminalProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -96,7 +99,15 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
     }
 
     // Connect WebSocket (토큰 포함)
-    const wsUrl = `ws://localhost:8508?cwd=${encodeURIComponent(cwd || 'C:\\Users\\user\\Desktop')}&token=${encodeURIComponent(token)}`;
+    let wsUrl = `ws://localhost:8508?token=${encodeURIComponent(token)}`;
+
+    if (mode === 'ssh' && serverId) {
+      wsUrl += `&mode=ssh&serverId=${encodeURIComponent(serverId)}`;
+      if (cwd) wsUrl += `&cwd=${encodeURIComponent(cwd)}`;
+      if (tmuxSession) wsUrl += `&tmux=${encodeURIComponent(tmuxSession)}`;
+    } else {
+      wsUrl += `&cwd=${encodeURIComponent(cwd || 'C:\\Users\\user\\Desktop')}`;
+    }
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -171,7 +182,7 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
         ws.close();
       }
     };
-  }, [cwd, autoCommand]);
+  }, [cwd, autoCommand, mode, serverId, tmuxSession]);
 
   useEffect(() => {
     const cleanup = connect();
@@ -205,11 +216,16 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
       <div className="flex items-center justify-between px-4 py-2 bg-[#18181b] border-b border-[#27272a]">
         <div className="flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-indigo-400" />
-          <span className="text-sm font-medium text-zinc-300">터미널</span>
+          <span className="text-sm font-medium text-zinc-300">
+            {mode === 'ssh' ? 'SSH 터미널' : '터미널'}
+          </span>
           {cwd && (
             <span className="text-xs text-zinc-500 truncate max-w-[200px]">
               {cwd.split('\\').pop()}
             </span>
+          )}
+          {mode === 'ssh' && (
+            <span className="text-xs text-purple-400">SSH</span>
           )}
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
         </div>

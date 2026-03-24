@@ -10,6 +10,7 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  serverExternalPackages: ['ssh2', 'node-pty'],
 };
 
 export default withPWA(nextConfig);
