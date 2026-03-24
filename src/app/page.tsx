@@ -25,6 +25,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { Sidebar } from '@/components/Sidebar';
 import { ProjectModal } from '@/components/ProjectModal';
 import { GroupManager } from '@/components/GroupManager';
+import { GitHubSettings } from '@/components/GitHubSettings';
 import { MorningCodex } from '@/components/MorningCodex';
 import { CodeSearch } from '@/components/CodeSearch';
 import { useToast } from '@/components/Toast';
@@ -48,6 +49,7 @@ export default function Home() {
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [codeSearchOpen, setCodeSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { showToast } = useToast();
   const easterEggs = useEasterEggs();
 
@@ -425,6 +427,7 @@ export default function Home() {
     if (activeFilter === 'active') return p.status === 'active' || p.status === 'development';
     if (activeFilter === 'deployed') return p.status === 'deployed';
     if (activeFilter === 'archived') return p.status === 'archived';
+    if (activeFilter === 'github') return !!p.githubUrl;
     if (activeFilter.startsWith('type:')) {
       const type = activeFilter.replace('type:', '');
       return p.type === type;
@@ -535,6 +538,7 @@ export default function Home() {
         onManageGroups={() => setGroupManagerOpen(true)}
         isMobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <main className="lg:ml-64 min-h-screen">
@@ -866,6 +870,12 @@ export default function Home() {
         open={codeSearchOpen}
         onClose={() => setCodeSearchOpen(false)}
         projects={projects}
+      />
+
+      {/* GitHub 설정 */}
+      <GitHubSettings
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
 
       {/* 이스터에그 효과 */}

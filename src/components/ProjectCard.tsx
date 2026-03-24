@@ -15,6 +15,8 @@ import {
   Braces,
   Tag,
   Star,
+  FolderGit2 as GithubIcon,
+  GitFork,
 } from 'lucide-react';
 import { Project, PROJECT_TYPE_COLORS, STATUS_COLORS, STATUS_LABELS } from '@/lib/types';
 
@@ -77,7 +79,11 @@ export function ProjectCard({ project, index, onOpen, onRun, onTogglePin }: Proj
     >
       <div
         onClick={() => onOpen(project)}
-        className="relative flex flex-col h-full p-5 bg-[#18181b] border border-[#27272a] rounded-xl cursor-pointer transition-all duration-200 hover:bg-[#1f1f23] hover:border-[#3f3f46] hover:shadow-lg hover:shadow-black/20"
+        className={`relative flex flex-col h-full p-5 bg-[#18181b] rounded-xl cursor-pointer transition-all duration-200 hover:bg-[#1f1f23] hover:shadow-lg hover:shadow-black/20 ${
+          project.isGithubOnly
+            ? 'border border-dashed border-purple-500/30 hover:border-purple-500/50'
+            : 'border border-[#27272a] hover:border-[#3f3f46]'
+        }`}
       >
         {/* 상단 */}
         <div className="flex items-start justify-between mb-4">
@@ -203,10 +209,32 @@ export function ProjectCard({ project, index, onOpen, onRun, onTogglePin }: Proj
               <Clock className="w-3.5 h-3.5" />
               {project.lastModifiedRelative}
             </span>
+            {project.isGithubOnly && project.githubUrl && (
+              <>
+                {project.githubStars != null && (
+                  <span className="flex items-center gap-1">
+                    <Star className="w-3 h-3" />
+                    {project.githubStars}
+                  </span>
+                )}
+                {project.githubForks != null && (
+                  <span className="flex items-center gap-1">
+                    <GitFork className="w-3 h-3" />
+                    {project.githubForks}
+                  </span>
+                )}
+              </>
+            )}
             {project.hasGit && (
               <span className="flex items-center gap-1.5">
                 <GitBranch className="w-3.5 h-3.5" />
                 Git
+              </span>
+            )}
+            {project.githubUrl && (
+              <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
+                <GithubIcon className="w-3 h-3" />
+                {project.isGithubOnly ? 'GitHub' : 'GitHub 연결'}
               </span>
             )}
             {project.hasPackageJson && (

@@ -28,6 +28,10 @@ import {
   Layers,
   ChevronDown,
   Monitor,
+  FolderGit2 as GithubIcon,
+  Star,
+  GitFork,
+  AlertCircle as IssueIcon,
 } from 'lucide-react';
 import { Project, ProjectStatus, ProjectGroup, PROJECT_TYPE_COLORS, STATUS_COLORS, STATUS_LABELS, PROJECT_TYPE_LABELS } from '@/lib/types';
 import { FileTree } from './FileTree';
@@ -570,30 +574,50 @@ export function ProjectModal({
                 </div>
               </div>
 
-              {/* 파일 트리 & README */}
-              <div className="p-4 border-b border-[#27272a]">
-                <div className="flex items-center gap-2 mb-3">
-                  <FolderTree className="w-4 h-4 text-zinc-500" />
-                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-                    파일 구조
-                  </span>
-                </div>
-                <div className="bg-[#0f0f10] rounded-lg p-2">
-                  <FileTree projectPath={project.path} />
-                </div>
-
-                {/* README */}
-                <div className="mt-3">
-                  <ReadmeViewer projectPath={project.path} />
-                </div>
-
-                {/* Git 정보 */}
-                {project.hasGit && (
-                  <div className="mt-3">
-                    <GitInfo projectPath={project.path} />
+              {/* GitHub 정보 */}
+              {project.githubUrl && (
+                <div className="px-6 py-4 border-b border-[#27272a]">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-zinc-400">
+                      <GithubIcon className="w-4 h-4" />
+                      <a href={project.githubUrl} target="_blank" rel="noopener noreferrer"
+                         className="text-purple-400 hover:text-purple-300 transition-colors">
+                        {project.githubFullName}
+                      </a>
+                      {project.isGithubOnly && (
+                        <span className="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded">GitHub 전용</span>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* 파일 트리 & README — GitHub-only 레포는 로컬 파일 없음 */}
+              {!project.isGithubOnly && (
+                <div className="p-4 border-b border-[#27272a]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FolderTree className="w-4 h-4 text-zinc-500" />
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                      파일 구조
+                    </span>
+                  </div>
+                  <div className="bg-[#0f0f10] rounded-lg p-2">
+                    <FileTree projectPath={project.path} />
+                  </div>
+
+                  {/* README */}
+                  <div className="mt-3">
+                    <ReadmeViewer projectPath={project.path} />
+                  </div>
+
+                  {/* Git 정보 */}
+                  {project.hasGit && (
+                    <div className="mt-3">
+                      <GitInfo projectPath={project.path} />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 메모 섹션 */}
               <div className="p-4 border-b border-[#27272a]">

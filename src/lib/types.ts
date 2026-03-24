@@ -18,6 +18,11 @@ export interface Project {
   pinned?: boolean;
   lastOpened?: string;
   group?: string;
+  githubUrl?: string;
+  githubFullName?: string;
+  isGithubOnly?: boolean;
+  githubStars?: number;
+  githubForks?: number;
 }
 
 export interface ProjectGroup {
@@ -93,6 +98,34 @@ export const STATUS_LABELS: Record<ProjectStatus, string> = {
   archived: '보관됨',
   development: '개발중',
 };
+
+// GitHub 레포 타입
+export interface GitHubRepo {
+  id: number;
+  full_name: string;
+  name: string;
+  description?: string;
+  html_url: string;
+  default_branch: string;
+  language?: string;
+  stars: number;
+  forks: number;
+  open_issues: number;
+  updated_at: string;
+  pushed_at: string;
+  local_path?: string;
+  is_private: boolean;
+  synced_at?: string;
+}
+
+// GitHub 사용자 정보
+export interface GitHubUser {
+  login: string;
+  name?: string;
+  avatar_url: string;
+  public_repos: number;
+  total_private_repos?: number;
+}
 
 export const STATUS_COLORS: Record<ProjectStatus, string> = {
   active: '#22c55e',

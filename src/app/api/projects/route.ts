@@ -1,8 +1,19 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
 import { getProjectMeta, getAllProjectMeta, saveProjectMeta } from '@/lib/database';
+
+function detectLanguageType(language: string | null): ProjectType {
+  if (!language) return 'unknown';
+  const lang = language.toLowerCase();
+  if (lang === 'typescript' || lang === 'javascript') return 'node';
+  if (lang === 'python') return 'python';
+  if (lang === 'html') return 'html';
+  if (lang === 'vue') return 'vue';
+  return 'unknown';
+}
 
 const DESKTOP_PATH = 'C:\\Users\\user\\Desktop';
 
@@ -262,6 +273,22 @@ export async function GET() {
         const autoDetectedUrl = detectDeployUrl(fullPath);
         const deployUrl = projectMeta.deployUrl || autoDetectedUrl;
 
+        // GitHub URL 자동 감지
+        let githubUrl: string | undefined;
+        let githubFullName: string | undefined;
+        if (hasGit) {
+          try {
+            const remoteUrl = execSync('git remote get-url origin', {
+              cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true,
+            }).trim();
+            const ghMatch = remoteUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+            if (ghMatch) {
+              githubFullName = `${ghMatch[1]}/${ghMatch[2]}`;
+              githubUrl = `https://github.com/${githubFullName}`;
+            }
+          } catch {}
+        }
+
         const project: Project = {
           id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${projects.length}`,
           name: item,
@@ -282,6 +309,8 @@ export async function GET() {
           pinned: projectMeta.pinned || false,
           lastOpened: projectMeta.lastOpened,
           group: projectMeta.group,
+          githubUrl,
+          githubFullName,
         };
 
         projects.push(project);
@@ -289,6 +318,44 @@ export async function GET() {
         console.error(`Error processing ${item}:`, e);
       }
     }
+
+    // GitHub-only 레포 추가 (로컬에 없는 것만)
+    try {
+      const { getAllGitHubRepos } = await import('@/lib/database');
+      const githubRepos = getAllGitHubRepos();
+      const localPaths = new Set(projects.map(p => p.path.toLowerCase()));
+
+      for (const ghRepo of githubRepos) {
+        // 로컬에 이미 연결된 레포는 스킵
+        if (ghRepo.local_path && localPaths.has(ghRepo.local_path.toLowerCase())) continue;
+        // 이미 로컬 프로젝트로 매칭된 레포도 스킵
+        if (projects.some(p => p.githubFullName?.toLowerCase() === ghRepo.full_name.toLowerCase())) continue;
+
+        projects.push({
+          id: `gh-${ghRepo.github_id}`,
+          name: ghRepo.name,
+          path: ghRepo.html_url, // URL as path for GitHub-only repos
+          type: detectLanguageType(ghRepo.language),
+          framework: ghRepo.language || undefined,
+          lastModified: ghRepo.pushed_at || ghRepo.updated_at || new Date().toISOString(),
+          lastModifiedRelative: getRelativeTime(new Date(ghRepo.pushed_at || ghRepo.updated_at || Date.now())),
+          status: 'active' as ProjectStatus,
+          description: ghRepo.description || undefined,
+          techStack: ghRepo.language ? [ghRepo.language] : [],
+          hasPackageJson: false,
+          hasGit: true,
+          githubUrl: ghRepo.html_url,
+          githubFullName: ghRepo.full_name,
+          isGithubOnly: true,
+          githubStars: ghRepo.stars,
+          githubForks: ghRepo.forks,
+          size: 0,
+          fileCount: 0,
+          tags: [],
+          pinned: false,
+        });
+      }
+    } catch {}
 
     // Sort: pinned first, then by last modified
     projects.sort((a, b) => {
