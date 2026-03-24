@@ -12,7 +12,7 @@ import {
   TrendingUp,
   FolderOpen,
   ExternalLink,
-  Terminal,
+  Terminal as TerminalIcon,
   Code2,
   Menu,
   X,
@@ -32,6 +32,7 @@ import { useToast } from '@/components/Toast';
 import StatsPanel from '@/components/StatsPanel';
 import EasterEggEffects from '@/components/EasterEggEffects';
 import { useEasterEggs } from '@/hooks/useEasterEggs';
+import TerminalEmbed from '@/components/Terminal';
 
 type ViewMode = 'codex' | 'grid' | 'list' | 'stats';
 type SortMode = 'recent' | 'lastOpened' | 'name' | 'type';
@@ -50,6 +51,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [codeSearchOpen, setCodeSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [globalTerminalOpen, setGlobalTerminalOpen] = useState(false);
   const { showToast } = useToast();
   const easterEggs = useEasterEggs();
 
@@ -93,6 +95,13 @@ export default function Home() {
         } else {
           setCommandOpen(false);
         }
+        return;
+      }
+
+      // Ctrl+`: 글로벌 터미널 토글
+      if (e.key === '`' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setGlobalTerminalOpen(prev => !prev);
         return;
       }
 
@@ -791,6 +800,21 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* 글로벌 터미널 */}
+        <AnimatePresence>
+          {globalTerminalOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="fixed bottom-0 left-0 right-0 z-40 lg:left-64"
+              style={{ height: '350px' }}
+            >
+              <TerminalEmbed onClose={() => setGlobalTerminalOpen(false)} className="h-full rounded-none rounded-t-xl" />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 키보드 단축키 힌트 - 모바일에서 숨김 */}
         <div className="hidden md:flex fixed bottom-6 right-6 items-center gap-3 px-4 py-2 bg-[#18181b]/90 backdrop-blur border border-[#27272a] rounded-lg text-xs text-zinc-500">

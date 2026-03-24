@@ -47,7 +47,8 @@ next-env.d.ts
 /public/sw.js.map
 /public/workbox-*.js.map
 
-# Nexus meta
+# Nexus data (DB, 토큰 등)
+.nexus-data/
 .nexus-meta.json
 .nexus-groups.json
 

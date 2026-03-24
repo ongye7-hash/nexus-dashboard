@@ -9,7 +9,7 @@ import {
   Code2,
   Play,
   Globe,
-  Terminal,
+  Terminal as TerminalIcon,
   FileText,
   Clock,
   GitBranch,
@@ -40,6 +40,7 @@ import { LivePreview } from './LivePreview';
 import { GitInfo } from './GitInfo';
 import ProjectTodos from './ProjectTodos';
 import AIAssistant from './AIAssistant';
+import TerminalEmbed from './Terminal';
 
 interface ProjectModalProps {
   project: Project | null;
@@ -120,6 +121,8 @@ export function ProjectModal({
   const [currentGroup, setCurrentGroup] = useState<string | undefined>(undefined);
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
   const [showLivePreview, setShowLivePreview] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [showClaudeCode, setShowClaudeCode] = useState(false);
 
   useEffect(() => {
     if (project) {
@@ -133,6 +136,8 @@ export function ProjectModal({
       setIsEditingUrl(false);
       setIsGroupDropdownOpen(false);
       setShowLivePreview(false);
+      setShowTerminal(false);
+      setShowClaudeCode(false);
       setNewTag('');
     }
   }, [project]);
@@ -326,7 +331,7 @@ export function ProjectModal({
       id: 'terminal',
       label: '터미널',
       description: '명령 프롬프트',
-      icon: Terminal,
+      icon: TerminalIcon,
       color: 'text-purple-400',
       bgColor: 'bg-purple-500/10',
       onClick: () => onOpenTerminal(project),
@@ -703,6 +708,49 @@ export function ProjectModal({
                     );
                   })}
                 </div>
+
+                {/* 내장 터미널 버튼 */}
+                {!project.isGithubOnly && (
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => setShowTerminal(!showTerminal)}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 hover:bg-[#27272a] transition-colors"
+                    >
+                      <TerminalIcon className="w-4 h-4 text-indigo-400" />
+                      내장 터미널
+                    </button>
+                    <button
+                      onClick={() => setShowClaudeCode(!showClaudeCode)}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white transition-colors"
+                    >
+                      <TerminalIcon className="w-4 h-4" />
+                      Claude Code
+                    </button>
+                  </div>
+                )}
+
+                {/* 내장 터미널 */}
+                {showTerminal && !project.isGithubOnly && (
+                  <div className="mt-3" style={{ height: '400px' }}>
+                    <TerminalEmbed
+                      cwd={project.path}
+                      onClose={() => setShowTerminal(false)}
+                      className="h-full"
+                    />
+                  </div>
+                )}
+
+                {/* Claude Code 세션 */}
+                {showClaudeCode && !project.isGithubOnly && (
+                  <div className="mt-3" style={{ height: '500px' }}>
+                    <TerminalEmbed
+                      cwd={project.path}
+                      autoCommand="claude"
+                      onClose={() => setShowClaudeCode(false)}
+                      className="h-full"
+                    />
+                  </div>
+                )}
 
                 {/* 배포 URL */}
                 <div className="mt-4 p-3 bg-[#0f0f10] rounded-xl">
