@@ -18,6 +18,10 @@ import {
   Tag,
   Hash,
   Star,
+  Bot,
+  Sparkles,
+  FileText,
+  Lightbulb,
 } from 'lucide-react';
 import { Project } from '@/lib/types';
 
@@ -28,6 +32,7 @@ interface CommandPaletteProps {
   onSelectProject: (project: Project) => void;
   onRunProject: (project: Project) => void;
   onRefresh: () => void;
+  onOpenAI?: (project: Project, action: 'summarize' | 'generateReadme' | 'suggestImprovements') => void;
 }
 
 export function CommandPalette({
@@ -37,6 +42,7 @@ export function CommandPalette({
   onSelectProject,
   onRunProject,
   onRefresh,
+  onOpenAI,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState('');
 
@@ -148,6 +154,45 @@ export function CommandPalette({
                 <Command.Empty className="py-12 text-center text-sm text-zinc-500">
                   검색 결과가 없습니다.
                 </Command.Empty>
+
+                {/* AI 기능 (선택된 프로젝트가 있을 때만 표시) */}
+                {onOpenAI && filteredProjects.length === 1 && (
+                  <Command.Group heading="AI 어시스턴트" className="mb-2">
+                    <Command.Item
+                      onSelect={() => {
+                        onOpenAI(filteredProjects[0], 'summarize');
+                        onOpenChange(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-300 cursor-pointer data-[selected=true]:bg-purple-500/10 data-[selected=true]:text-purple-300"
+                    >
+                      <FileText className="w-4 h-4 text-purple-400" />
+                      <span>프로젝트 요약 (AI)</span>
+                      <span className="ml-auto text-xs text-purple-400/60">Ollama</span>
+                    </Command.Item>
+                    <Command.Item
+                      onSelect={() => {
+                        onOpenAI(filteredProjects[0], 'generateReadme');
+                        onOpenChange(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-300 cursor-pointer data-[selected=true]:bg-purple-500/10 data-[selected=true]:text-purple-300"
+                    >
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      <span>README 자동 생성 (AI)</span>
+                      <span className="ml-auto text-xs text-purple-400/60">Ollama</span>
+                    </Command.Item>
+                    <Command.Item
+                      onSelect={() => {
+                        onOpenAI(filteredProjects[0], 'suggestImprovements');
+                        onOpenChange(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-300 cursor-pointer data-[selected=true]:bg-purple-500/10 data-[selected=true]:text-purple-300"
+                    >
+                      <Lightbulb className="w-4 h-4 text-purple-400" />
+                      <span>개선점 제안 (AI)</span>
+                      <span className="ml-auto text-xs text-purple-400/60">Ollama</span>
+                    </Command.Item>
+                  </Command.Group>
+                )}
 
                 {/* 빠른 실행 */}
                 <Command.Group heading="빠른 실행" className="mb-2">

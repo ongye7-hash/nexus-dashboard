@@ -18,6 +18,7 @@ import {
   ArrowDown,
   RefreshCw,
 } from 'lucide-react';
+import CommitMessageGenerator from './CommitMessageGenerator';
 
 interface GitCommitData {
   hash: string;
@@ -121,9 +122,9 @@ export function GitInfo({ projectPath }: GitInfoProps) {
   return (
     <div className="bg-[#0f0f10] rounded-lg overflow-hidden">
       {/* 헤더 - 항상 보임 */}
-      <button
+      <div
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/50 transition-colors"
+        className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3">
           <GitBranch className="w-4 h-4 text-orange-400" />
@@ -190,7 +191,7 @@ export function GitInfo({ projectPath }: GitInfoProps) {
             <ChevronDown className="w-4 h-4 text-zinc-500" />
           )}
         </div>
-      </button>
+      </div>
 
       {/* 확장된 내용 */}
       <AnimatePresence>
@@ -259,6 +260,11 @@ export function GitInfo({ projectPath }: GitInfoProps) {
                         +{info.status!.untracked.length - 5}개 더...
                       </p>
                     )}
+                  </div>
+
+                  {/* AI 커밋 메시지 생성 */}
+                  <div className="mt-4 pt-3 border-t border-zinc-800">
+                    <CommitMessageGenerator projectPath={projectPath} />
                   </div>
                 </div>
               )}

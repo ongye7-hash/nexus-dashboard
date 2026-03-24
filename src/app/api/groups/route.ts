@@ -1,25 +1,20 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { ProjectGroup } from '@/lib/types';
-
-const DESKTOP_PATH = 'C:\\Users\\user\\Desktop';
-const GROUPS_FILE = path.join(DESKTOP_PATH, 'nexus-dashboard', '.nexus-groups.json');
+import { getAllGroups, saveGroup, deleteGroup as dbDeleteGroup } from '@/lib/database';
 
 function loadGroups(): ProjectGroup[] {
   try {
-    if (fs.existsSync(GROUPS_FILE)) {
-      return JSON.parse(fs.readFileSync(GROUPS_FILE, 'utf-8'));
-    }
-  } catch {}
-  return [];
-}
-
-function saveGroups(groups: ProjectGroup[]) {
-  try {
-    fs.writeFileSync(GROUPS_FILE, JSON.stringify(groups, null, 2));
+    const groups = getAllGroups();
+    return groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      icon: g.icon,
+      order: g.sort_order,
+    }));
   } catch (e) {
-    console.error('Failed to save groups:', e);
+    console.error('Failed to load groups:', e);
+    return [];
   }
 }
 
@@ -41,8 +36,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action, group, groupId } = body;
 
-    const groups = loadGroups();
-
     switch (action) {
       case 'create': {
         const newGroup: ProjectGroup = {
@@ -50,44 +43,57 @@ export async function POST(request: Request) {
           name: group.name,
           color: group.color,
           icon: group.icon,
-          order: groups.length,
+          order: loadGroups().length,
         };
-        groups.push(newGroup);
-        saveGroups(groups);
+        saveGroup({
+          id: newGroup.id,
+          name: newGroup.name,
+          color: newGroup.color,
+          icon: newGroup.icon,
+          sort_order: newGroup.order,
+        });
         return NextResponse.json({ success: true, group: newGroup });
       }
 
       case 'update': {
-        const index = groups.findIndex((g) => g.id === groupId);
-        if (index !== -1) {
-          groups[index] = { ...groups[index], ...group };
-          saveGroups(groups);
-          return NextResponse.json({ success: true, group: groups[index] });
-        }
-        return NextResponse.json({ error: 'Group not found' }, { status: 404 });
+        saveGroup({
+          id: groupId,
+          name: group.name,
+          color: group.color,
+          icon: group.icon,
+          sort_order: group.order,
+        });
+        return NextResponse.json({ success: true, group: { ...group, id: groupId } });
       }
 
       case 'delete': {
-        const filtered = groups.filter((g) => g.id !== groupId);
-        saveGroups(filtered);
+        dbDeleteGroup(groupId);
         return NextResponse.json({ success: true });
       }
 
       case 'reorder': {
         const { orderedIds } = body;
-        const reordered = orderedIds.map((id: string, index: number) => {
+        const groups = loadGroups();
+        orderedIds.forEach((id: string, index: number) => {
           const g = groups.find((gr) => gr.id === id);
-          if (g) return { ...g, order: index };
-          return null;
-        }).filter(Boolean);
-        saveGroups(reordered);
-        return NextResponse.json({ success: true, groups: reordered });
+          if (g) {
+            saveGroup({
+              id: g.id,
+              name: g.name,
+              color: g.color,
+              icon: g.icon,
+              sort_order: index,
+            });
+          }
+        });
+        return NextResponse.json({ success: true, groups: loadGroups() });
       }
 
       default:
         return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
   } catch (error) {
+    console.error('Failed to manage groups:', error);
     return NextResponse.json(
       { error: 'Failed to manage groups' },
       { status: 500 }

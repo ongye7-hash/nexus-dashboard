@@ -16,6 +16,8 @@ import {
   Code2,
   Menu,
   X,
+  Sunrise,
+  BarChart3,
 } from 'lucide-react';
 import { Project, ProjectStatus, ProjectGroup, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
 import { ProjectCard } from '@/components/ProjectCard';
@@ -23,16 +25,21 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { Sidebar } from '@/components/Sidebar';
 import { ProjectModal } from '@/components/ProjectModal';
 import { GroupManager } from '@/components/GroupManager';
+import { MorningCodex } from '@/components/MorningCodex';
+import { CodeSearch } from '@/components/CodeSearch';
 import { useToast } from '@/components/Toast';
+import StatsPanel from '@/components/StatsPanel';
+import EasterEggEffects from '@/components/EasterEggEffects';
+import { useEasterEggs } from '@/hooks/useEasterEggs';
 
-type ViewMode = 'grid' | 'list';
+type ViewMode = 'codex' | 'grid' | 'list' | 'stats';
 type SortMode = 'recent' | 'lastOpened' | 'name' | 'type';
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>('codex');
   const [sortMode, setSortMode] = useState<SortMode>('recent');
   const [activeFilter, setActiveFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -40,7 +47,9 @@ export default function Home() {
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [codeSearchOpen, setCodeSearchOpen] = useState(false);
   const { showToast } = useToast();
+  const easterEggs = useEasterEggs();
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -95,6 +104,13 @@ export default function Home() {
         return;
       }
 
+      // Ctrl + Shift + F: 코드 검색
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        setCodeSearchOpen(true);
+        return;
+      }
+
       // /: 커맨드 팔레트 (vim 스타일)
       if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
@@ -106,6 +122,10 @@ export default function Home() {
       if (e.key === 'r' && !e.metaKey && !e.ctrlKey) {
         handleRefresh();
       }
+      // C: Codex 뷰
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
+        setViewMode('codex');
+      }
       // G: 그리드 뷰
       if (e.key === 'g' && !e.metaKey && !e.ctrlKey) {
         setViewMode('grid');
@@ -113,6 +133,10 @@ export default function Home() {
       // L: 리스트 뷰
       if (e.key === 'l' && !e.metaKey && !e.ctrlKey) {
         setViewMode('list');
+      }
+      // T: 통계 뷰
+      if (e.key === 't' && !e.metaKey && !e.ctrlKey) {
+        setViewMode('stats');
       }
 
       // 숫자 키: 빠른 필터
@@ -210,17 +234,27 @@ export default function Home() {
 
   const handleOpenVSCode = (project: Project) => {
     executeAction('openVSCode', project.path, `💻 ${project.name}을(를) VSCode로 열었습니다`, project.name);
-    setSelectedProject(null);
+    if (selectedProject) setSelectedProject(null);
   };
 
   const handleRunProject = (project: Project) => {
     executeAction('runProject', project.path, `▶️ ${project.name} 프로젝트를 실행했습니다`, project.name);
-    setSelectedProject(null);
+    if (selectedProject) setSelectedProject(null);
   };
 
   const handleOpenTerminal = (project: Project) => {
     executeAction('openTerminal', project.path, `🖥️ ${project.name} 터미널을 열었습니다`, project.name);
-    setSelectedProject(null);
+    if (selectedProject) setSelectedProject(null);
+  };
+
+  const handleBatchRun = (projectsToRun: Project[]) => {
+    projectsToRun.forEach((project, index) => {
+      // 약간의 딜레이를 두고 순차적으로 실행
+      setTimeout(() => {
+        executeAction('runProject', project.path, `▶️ ${project.name} 실행`, project.name);
+      }, index * 500);
+    });
+    showToast(`🚀 ${projectsToRun.length}개 프로젝트 일괄 실행 중...`, 'success');
   };
 
   const handleUpdateMemo = (projectName: string, memo: string) => {
@@ -443,6 +477,8 @@ export default function Home() {
   };
 
   const getFilterTitle = () => {
+    if (viewMode === 'codex') return 'Morning Codex';
+    if (viewMode === 'stats') return '개발자 통계';
     switch (activeFilter) {
       case 'all': return '전체 프로젝트';
       case 'pinned': return '즐겨찾기';
@@ -479,7 +515,13 @@ export default function Home() {
     <>
       <Sidebar
         activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
+        onFilterChange={(filter) => {
+          setActiveFilter(filter);
+          // 필터 선택시 Codex 뷰에서 그리드 뷰로 전환
+          if (viewMode === 'codex') {
+            setViewMode('grid');
+          }
+        }}
         stats={stats}
         allTags={allTags}
         groups={groups}
@@ -516,6 +558,17 @@ export default function Home() {
               {/* 뷰 모드 전환 */}
               <div className="flex items-center bg-[#18181b] rounded-lg p-1">
                 <button
+                  onClick={() => setViewMode('codex')}
+                  className={`p-2 rounded-md transition-colors ${
+                    viewMode === 'codex'
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                  title="Codex 뷰 (C)"
+                >
+                  <Sunrise className="w-4 h-4" />
+                </button>
+                <button
                   onClick={() => setViewMode('grid')}
                   className={`p-2 rounded-md transition-colors ${
                     viewMode === 'grid'
@@ -536,6 +589,17 @@ export default function Home() {
                   title="리스트 뷰 (L)"
                 >
                   <List className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('stats')}
+                  className={`p-2 rounded-md transition-colors ${
+                    viewMode === 'stats'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                  title="통계 뷰 (T)"
+                >
+                  <BarChart3 className="w-4 h-4" />
                 </button>
               </div>
 
@@ -579,8 +643,8 @@ export default function Home() {
           </div>
         </header>
 
-        {/* 통계 바 */}
-        <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[#1f1f23]">
+        {/* 통계 바 - Codex/Stats 뷰에서는 숨김 */}
+        {viewMode !== 'codex' && viewMode !== 'stats' && <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[#1f1f23]">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
             <div className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
               <div className="p-2 lg:p-3 bg-indigo-500/10 rounded-lg">
@@ -619,9 +683,9 @@ export default function Home() {
               </div>
             </div>
           </div>
-        </div>
+        </div>}
 
-        {/* 프로젝트 그리드 */}
+        {/* 프로젝트 콘텐츠 */}
         <div className="p-4 lg:p-8">
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -632,6 +696,17 @@ export default function Home() {
                 />
               ))}
             </div>
+          ) : viewMode === 'stats' ? (
+            <StatsPanel projects={projects} />
+          ) : viewMode === 'codex' ? (
+            <MorningCodex
+              projects={projects}
+              onRunProject={handleRunProject}
+              onOpenVSCode={handleOpenVSCode}
+              onOpenTerminal={handleOpenTerminal}
+              onSelectProject={handleOpenProject}
+              onBatchRun={handleBatchRun}
+            />
           ) : sortedProjects.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <FolderOpen className="w-12 h-12 text-zinc-600 mb-4" />
@@ -710,19 +785,16 @@ export default function Home() {
         {/* 키보드 단축키 힌트 - 모바일에서 숨김 */}
         <div className="hidden md:flex fixed bottom-6 right-6 items-center gap-3 px-4 py-2 bg-[#18181b]/90 backdrop-blur border border-[#27272a] rounded-lg text-xs text-zinc-500">
           <span className="flex items-center gap-1.5">
-            <kbd className="kbd">/</kbd> 검색
+            <kbd className="kbd">Ctrl+Shift+F</kbd> 코드검색
           </span>
           <span className="flex items-center gap-1.5">
-            <kbd className="kbd">1-5</kbd> 필터
+            <kbd className="kbd">C</kbd> Codex
           </span>
           <span className="flex items-center gap-1.5">
             <kbd className="kbd">G</kbd>/<kbd className="kbd">L</kbd> 뷰
           </span>
           <span className="flex items-center gap-1.5">
-            <kbd className="kbd">S</kbd> 정렬
-          </span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="kbd">R</kbd> 새로고침
+            <kbd className="kbd">T</kbd> 통계
           </span>
         </div>
       </main>
@@ -761,6 +833,22 @@ export default function Home() {
         onCreateGroup={handleCreateGroup}
         onUpdateGroup={handleUpdateGroupData}
         onDeleteGroup={handleDeleteGroup}
+      />
+
+      {/* 코드 검색 모달 */}
+      <CodeSearch
+        open={codeSearchOpen}
+        onClose={() => setCodeSearchOpen(false)}
+        projects={projects}
+      />
+
+      {/* 이스터에그 효과 */}
+      <EasterEggEffects
+        konamiActivated={easterEggs.konamiActivated}
+        sudoSandwich={easterEggs.sudoSandwich}
+        coffeeMode={easterEggs.coffeeMode}
+        matrixMode={easterEggs.matrixMode}
+        partyMode={easterEggs.partyMode}
       />
     </>
   );

@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
+import { getProjectMeta, getAllProjectMeta, saveProjectMeta } from '@/lib/database';
 
 const DESKTOP_PATH = 'C:\\Users\\user\\Desktop';
-const META_FILE = path.join(DESKTOP_PATH, 'nexus-dashboard', '.nexus-meta.json');
 
 const IGNORED_FOLDERS = [
   'node_modules',
@@ -151,20 +151,29 @@ function detectProjectType(dirPath: string): { type: ProjectType; framework?: st
   return { type, framework, techStack };
 }
 
-function loadMeta(): Record<string, any> {
+// 모든 프로젝트 메타데이터를 경로 기반 맵으로 변환
+function loadAllMeta(): Record<string, any> {
   try {
-    if (fs.existsSync(META_FILE)) {
-      return JSON.parse(fs.readFileSync(META_FILE, 'utf-8'));
-    }
-  } catch {}
-  return {};
-}
+    const allMeta = getAllProjectMeta();
+    const metaMap: Record<string, any> = {};
 
-function saveMeta(meta: Record<string, any>) {
-  try {
-    fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
+    for (const meta of allMeta) {
+      const projectName = path.basename(meta.project_path);
+      metaMap[projectName] = {
+        description: meta.notes,
+        tags: meta.tags ? JSON.parse(meta.tags) : [],
+        status: meta.status,
+        pinned: meta.pinned === 1,
+        lastOpened: meta.last_opened,
+        group: meta.group_id,
+        deployUrl: meta.deploy_url,
+      };
+    }
+
+    return metaMap;
   } catch (e) {
-    console.error('Failed to save meta:', e);
+    console.error('Failed to load meta from database:', e);
+    return {};
   }
 }
 
@@ -201,7 +210,7 @@ function getDirectorySize(dirPath: string, maxDepth = 2): { size: number; fileCo
 export async function GET() {
   try {
     const items = fs.readdirSync(DESKTOP_PATH);
-    const meta = loadMeta();
+    const meta = loadAllMeta();
     const projects: Project[] = [];
 
     for (const item of items) {
@@ -291,12 +300,24 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { projectName, updates } = body;
 
-    const meta = loadMeta();
-    meta[projectName] = { ...meta[projectName], ...updates };
-    saveMeta(meta);
+    // 프로젝트 경로 찾기
+    const projectPath = path.join(DESKTOP_PATH, projectName);
+
+    // SQLite에 저장
+    saveProjectMeta({
+      project_path: projectPath,
+      notes: updates.description,
+      tags: updates.tags ? JSON.stringify(updates.tags) : undefined,
+      status: updates.status,
+      pinned: updates.pinned !== undefined ? (updates.pinned ? 1 : 0) : undefined,
+      last_opened: updates.lastOpened,
+      group_id: updates.group,
+      deploy_url: updates.deployUrl,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    console.error('Failed to update project:', error);
     return NextResponse.json(
       { error: 'Failed to update project' },
       { status: 500 }

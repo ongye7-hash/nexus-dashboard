@@ -1,8 +1,38 @@
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
+import { savePortMapping as dbSavePortMapping } from '@/lib/database';
 
 const execAsync = promisify(exec);
+
+// 프로젝트의 package.json에서 포트 추출
+function detectPortFromPackageJson(projectPath: string): number {
+  try {
+    const pkgPath = path.join(projectPath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      const devScript = pkg.scripts?.dev || '';
+
+      // -p 또는 --port 옵션에서 포트 추출
+      const portMatch = devScript.match(/(?:-p|--port)\s+(\d+)/);
+      if (portMatch) {
+        return parseInt(portMatch[1], 10);
+      }
+
+      // PORT= 환경변수에서 추출
+      const envPortMatch = devScript.match(/PORT=(\d+)/);
+      if (envPortMatch) {
+        return parseInt(envPortMatch[1], 10);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return 3000; // 기본 포트
+}
 
 export async function POST(request: Request) {
   try {
@@ -37,12 +67,15 @@ export async function POST(request: Request) {
 
       case 'runProject':
         // 프로젝트 실행 (새 터미널에서)
+        const port = detectPortFromPackageJson(path);
+        dbSavePortMapping(path, port);
+
         try {
           await execAsync(`wt -d "${path}" cmd /k "npm run dev"`);
         } catch {
           await execAsync(`start cmd /k "cd /d ${path} && npm run dev"`);
         }
-        return NextResponse.json({ success: true, message: '프로젝트를 실행했습니다' });
+        return NextResponse.json({ success: true, message: '프로젝트를 실행했습니다', port });
 
       default:
         return NextResponse.json({ error: '알 수 없는 액션입니다' }, { status: 400 });
