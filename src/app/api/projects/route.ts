@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
-import { getProjectMeta, getAllProjectMeta, saveProjectMeta } from '@/lib/database';
+import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos } from '@/lib/database';
 
 function detectLanguageType(language: string | null): ProjectType {
   if (!language) return 'unknown';
@@ -321,7 +321,6 @@ export async function GET() {
 
     // GitHub-only 레포 추가 (로컬에 없는 것만)
     try {
-      const { getAllGitHubRepos } = await import('@/lib/database');
       const githubRepos = getAllGitHubRepos();
       const localPaths = new Set(projects.map(p => p.path.toLowerCase()));
 

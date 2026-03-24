@@ -456,13 +456,7 @@ export function MorningCodex({
     return modified.length + added.length + deleted.length + untracked.length;
   };
 
-  const getProjectForPort = (port: number): Project | undefined => {
-    if (port === 8507) return undefined;
-    const possibleProjects = projects.filter(p =>
-      p.type === 'nextjs' || p.type === 'react' || p.type === 'node'
-    );
-    return possibleProjects.find(p => p.lastOpened) || possibleProjects[0];
-  };
+  // 포트-프로젝트 매칭은 API에서만 수행. 클라이언트에서 추측하지 않음.
 
   // Dismiss alert
   const dismissAlert = (alertId: string) => {
@@ -863,7 +857,7 @@ export function MorningCodex({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {runningProcesses.map((process) => {
                 const isCurrentDashboard = process.port === 8507;
-                const displayName = process.projectName || getProjectForPort(process.port)?.name || process.name || 'Unknown';
+                const displayName = process.projectName || process.name || `포트 ${process.port}`;
 
                 return (
                   <div

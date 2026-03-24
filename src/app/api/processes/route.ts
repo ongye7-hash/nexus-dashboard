@@ -81,12 +81,48 @@ export async function GET() {
             // 포트 매핑에서 프로젝트 정보 가져오기
             const projectInfo = portToProject[port];
 
+            let resolvedName = projectInfo?.name;
+            let resolvedPath = projectInfo?.path;
+
+            if (!resolvedName) {
+              // 1차: PID 커맨드라인에서 Desktop\프로젝트명 패턴 추출
+              try {
+                const cmdLine = execSync(
+                  `wmic process where "ProcessId=${pid}" get CommandLine /FORMAT:LIST`,
+                  { encoding: 'utf-8', windowsHide: true, timeout: 3000 }
+                ).trim();
+                const pathMatch = cmdLine.match(/Desktop\\([\w.-]+)/i);
+                if (pathMatch) {
+                  resolvedName = pathMatch[1];
+                  resolvedPath = path.join('C:\\Users\\user\\Desktop', pathMatch[1]);
+                }
+              } catch {}
+
+              // 2차: 못 찾으면 HTTP 요청으로 페이지 타이틀 추출
+              if (!resolvedName) {
+                try {
+                  const controller = new AbortController();
+                  const timeout = setTimeout(() => controller.abort(), 2000);
+                  const res = await fetch(`http://localhost:${port}`, {
+                    signal: controller.signal,
+                    headers: { 'Accept': 'text/html' },
+                  });
+                  clearTimeout(timeout);
+                  const html = await res.text();
+                  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+                  if (titleMatch) {
+                    resolvedName = titleMatch[1].trim();
+                  }
+                } catch {}
+              }
+            }
+
             processes.push({
               port,
               pid,
               name: processName,
-              projectPath: projectInfo?.path,
-              projectName: projectInfo?.name,
+              projectPath: resolvedPath,
+              projectName: resolvedName,
             });
           }
         }
