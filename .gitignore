@@ -50,3 +50,6 @@ next-env.d.ts
 # Nexus meta
 .nexus-meta.json
 .nexus-groups.json
+
+# CLI
+cli/node_modules
