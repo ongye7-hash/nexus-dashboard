@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { validateProjectPath } from '@/lib/path-validator';
 
 interface GitCommit {
   hash: string;
@@ -71,11 +72,17 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const projectPath = searchParams.get('path');
 
-  if (!projectPath) {
-    return NextResponse.json({ error: 'Path required' }, { status: 400 });
+  // 경로 검증 (Path Traversal 방지)
+  const validation = validateProjectPath(projectPath);
+  if (!validation.isValid) {
+    return NextResponse.json(
+      { error: validation.error || 'Invalid path' },
+      { status: 400 }
+    );
   }
 
-  const gitDir = path.join(projectPath, '.git');
+  const safePath = validation.sanitizedPath!;
+  const gitDir = path.join(safePath, '.git');
   const isGitRepo = fs.existsSync(gitDir);
 
   if (!isGitRepo) {
@@ -85,14 +92,14 @@ export async function GET(request: Request) {
   const info: GitInfo = { isGitRepo: true };
 
   // Current branch
-  const branch = execGit(projectPath, 'rev-parse --abbrev-ref HEAD');
+  const branch = execGit(safePath, 'rev-parse --abbrev-ref HEAD');
   if (branch) {
     info.currentBranch = branch;
   }
 
   // Recent commits (last 10)
   const logOutput = execGit(
-    projectPath,
+    safePath,
     'log --oneline -10 --format="%H|%h|%s|%an|%aI"'
   );
   if (logOutput) {
@@ -110,7 +117,7 @@ export async function GET(request: Request) {
   }
 
   // Branches
-  const branchOutput = execGit(projectPath, 'branch -a');
+  const branchOutput = execGit(safePath, 'branch -a');
   if (branchOutput) {
     info.branches = branchOutput.split('\n').filter(Boolean).map((line) => {
       const isCurrent = line.startsWith('*');
@@ -121,7 +128,7 @@ export async function GET(request: Request) {
   }
 
   // Status
-  const statusOutput = execGit(projectPath, 'status --porcelain');
+  const statusOutput = execGit(safePath, 'status --porcelain');
   if (statusOutput !== null) {
     const status: GitStatus = {
       modified: [],
@@ -155,14 +162,14 @@ export async function GET(request: Request) {
   }
 
   // Remote URL
-  const remoteUrl = execGit(projectPath, 'remote get-url origin');
+  const remoteUrl = execGit(safePath, 'remote get-url origin');
   if (remoteUrl) {
     info.remoteUrl = remoteUrl;
     info.hasRemote = true;
 
     // Ahead/behind
     const aheadBehind = execGit(
-      projectPath,
+      safePath,
       `rev-list --left-right --count ${branch}...origin/${branch}`
     );
     if (aheadBehind) {

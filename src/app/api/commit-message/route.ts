@@ -3,18 +3,24 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { validateProjectPath } from '@/lib/path-validator';
 
 const execAsync = promisify(exec);
 
-const OLLAMA_URL = 'http://localhost:11434';
+// 설정 상수
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_TIMEOUT = 30000; // 30초
+const GIT_TIMEOUT = 30000;
+const MAX_BUFFER_SIZE = 1024 * 1024 * 5; // 5MB
+const MAX_DIFF_LENGTH = 4000;
 
 async function getGitDiff(projectPath: string): Promise<string> {
   try {
     // staged 변경사항 먼저 확인
     const { stdout: stagedDiff } = await execAsync('git diff --cached', {
       cwd: projectPath,
-      timeout: 30000,
-      maxBuffer: 1024 * 1024 * 5, // 5MB
+      timeout: GIT_TIMEOUT,
+      maxBuffer: MAX_BUFFER_SIZE,
     });
 
     if (stagedDiff.trim()) {
@@ -24,8 +30,8 @@ async function getGitDiff(projectPath: string): Promise<string> {
     // staged가 없으면 unstaged 확인
     const { stdout: unstagedDiff } = await execAsync('git diff', {
       cwd: projectPath,
-      timeout: 30000,
-      maxBuffer: 1024 * 1024 * 5,
+      timeout: GIT_TIMEOUT,
+      maxBuffer: MAX_BUFFER_SIZE,
     });
 
     return unstagedDiff;
@@ -39,7 +45,7 @@ async function getGitStatus(projectPath: string): Promise<string> {
   try {
     const { stdout } = await execAsync('git status --porcelain', {
       cwd: projectPath,
-      timeout: 10000,
+      timeout: GIT_TIMEOUT,
     });
     return stdout;
   } catch {
@@ -49,9 +55,8 @@ async function getGitStatus(projectPath: string): Promise<string> {
 
 async function generateWithOllama(diff: string, status: string): Promise<string> {
   // diff가 너무 길면 잘라내기
-  const maxDiffLength = 4000;
-  const truncatedDiff = diff.length > maxDiffLength
-    ? diff.substring(0, maxDiffLength) + '\n\n... (diff truncated)'
+  const truncatedDiff = diff.length > MAX_DIFF_LENGTH
+    ? diff.substring(0, MAX_DIFF_LENGTH) + '\n\n... (diff truncated)'
     : diff;
 
   const prompt = `You are a helpful assistant that generates git commit messages.
@@ -74,6 +79,10 @@ ${truncatedDiff}
 
 Commit message:`;
 
+  // 타임아웃 설정
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT);
+
   try {
     const response = await fetch(`${OLLAMA_URL}/api/generate`, {
       method: 'POST',
@@ -87,7 +96,10 @@ Commit message:`;
           num_predict: 100,
         },
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error('Ollama request failed');
@@ -96,10 +108,16 @@ Commit message:`;
     const data = await response.json();
     const message = data.response?.trim() || '';
 
+    // 빈 응답 체크
+    if (!message) {
+      throw new Error('Ollama returned empty response');
+    }
+
     // 커밋 메시지만 추출 (첫 번째 줄만)
     const firstLine = message.split('\n')[0].trim();
-    return firstLine;
+    return firstLine || 'chore: update';
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('Ollama error:', error);
     throw error;
   }
@@ -144,20 +162,28 @@ function generateSimpleMessage(status: string): string {
 
 export async function POST(request: Request) {
   try {
-    const { projectPath, useAI = true } = await request.json();
+    const body = await request.json();
+    const { projectPath, useAI = true } = body;
 
-    if (!projectPath) {
-      return NextResponse.json({ error: 'Project path required' }, { status: 400 });
+    // 경로 검증 (Path Traversal 방지)
+    const validation = validateProjectPath(projectPath);
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: validation.error || 'Invalid project path' },
+        { status: 400 }
+      );
     }
 
+    const safePath = validation.sanitizedPath!;
+
     // .git 확인
-    const gitPath = path.join(projectPath, '.git');
+    const gitPath = path.join(safePath, '.git');
     if (!fs.existsSync(gitPath)) {
       return NextResponse.json({ error: 'Not a git repository' }, { status: 400 });
     }
 
-    const diff = await getGitDiff(projectPath);
-    const status = await getGitStatus(projectPath);
+    const diff = await getGitDiff(safePath);
+    const status = await getGitStatus(safePath);
 
     if (!diff && !status) {
       return NextResponse.json({

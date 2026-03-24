@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { validateProjectPath } from '@/lib/path-validator';
 
 const execAsync = promisify(exec);
 
@@ -169,7 +170,22 @@ export async function POST(request: Request) {
     const results: AuditResult[] = [];
 
     for (const project of projects) {
-      const auditResult = await runAudit(project.path, project.name);
+      // 각 프로젝트 경로 검증 (Path Traversal 방지)
+      const validation = validateProjectPath(project.path);
+      if (!validation.isValid) {
+        results.push({
+          projectName: project.name,
+          projectPath: project.path,
+          hasPackageJson: false,
+          hasNodeModules: false,
+          summary: { total: 0, info: 0, low: 0, moderate: 0, high: 0, critical: 0 },
+          vulnerabilities: [],
+          error: validation.error || 'Invalid path',
+        });
+        continue;
+      }
+
+      const auditResult = await runAudit(validation.sanitizedPath!, project.name);
       results.push(auditResult);
     }
 
