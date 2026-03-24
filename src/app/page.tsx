@@ -214,6 +214,12 @@ export default function Home() {
               updates: { lastOpened: now },
             }),
           }).catch(console.error);
+          // 활동 기록 (히트맵 데이터)
+          fetch('/api/stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'record', type: 'project_open' }),
+          }).catch(console.error);
         }
       } else {
         showToast(data.error || '실행에 실패했습니다', 'error');
@@ -807,6 +813,26 @@ export default function Home() {
         onSelectProject={handleOpenProject}
         onRunProject={handleRunProject}
         onRefresh={handleRefresh}
+        onFilterType={() => {
+          setActiveFilter((prev) => {
+            const types = ['all', 'type:nextjs', 'type:react', 'type:python', 'type:html'];
+            const idx = types.indexOf(prev);
+            return types[(idx + 1) % types.length];
+          });
+          if (viewMode === 'codex') setViewMode('grid');
+        }}
+        onSortChange={() => {
+          setSortMode((prev) => {
+            const modes: SortMode[] = ['recent', 'lastOpened', 'name', 'type'];
+            const idx = modes.indexOf(prev);
+            return modes[(idx + 1) % modes.length];
+          });
+        }}
+        onOpenTerminal={() => {
+          if (selectedProject) {
+            handleOpenTerminal(selectedProject);
+          }
+        }}
       />
 
       {/* 프로젝트 상세 모달 */}

@@ -231,6 +231,20 @@ export async function GET() {
         const hasGit = fs.existsSync(path.join(fullPath, '.git'));
         const hasVercel = fs.existsSync(path.join(fullPath, '.vercel'));
 
+        // 개발 프로젝트 식별: 아래 중 하나라도 있어야 프로젝트로 인정
+        const isProject = hasPackageJson || hasGit || hasVercel
+          || fs.existsSync(path.join(fullPath, 'requirements.txt'))
+          || fs.existsSync(path.join(fullPath, 'pyproject.toml'))
+          || fs.existsSync(path.join(fullPath, 'setup.py'))
+          || fs.existsSync(path.join(fullPath, 'index.html'))
+          || fs.existsSync(path.join(fullPath, 'Cargo.toml'))
+          || fs.existsSync(path.join(fullPath, 'go.mod'))
+          || fs.existsSync(path.join(fullPath, 'pom.xml'))
+          || fs.existsSync(path.join(fullPath, 'build.gradle'))
+          || fs.existsSync(path.join(fullPath, '.gitignore'));
+
+        if (!isProject) continue;
+
         const projectMeta = meta[item] || {};
 
         let status: ProjectStatus = 'development';

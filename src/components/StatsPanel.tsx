@@ -6,6 +6,7 @@ import ActivityHeatmap from './ActivityHeatmap';
 import StreakDisplay from './StreakDisplay';
 import BadgeDisplay from './BadgeDisplay';
 import DependencyHealth from './DependencyHealth';
+import WeeklyReport from './WeeklyReport';
 import { Project } from '@/lib/types';
 
 interface StatsPanelProps {
@@ -108,6 +109,11 @@ export default function StatsPanel({ projects = [] }: StatsPanelProps) {
             <div className="text-xs text-zinc-500">총 작업 시간</div>
           </div>
         </div>
+      </section>
+
+      {/* 주간 리포트 */}
+      <section>
+        <WeeklyReport projects={projects} />
       </section>
 
       {/* 활동 히트맵 */}

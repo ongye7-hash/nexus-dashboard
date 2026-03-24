@@ -34,6 +34,8 @@ import { FileTree } from './FileTree';
 import { ReadmeViewer } from './ReadmeViewer';
 import { LivePreview } from './LivePreview';
 import { GitInfo } from './GitInfo';
+import ProjectTodos from './ProjectTodos';
+import AIAssistant from './AIAssistant';
 
 interface ProjectModalProps {
   project: Project | null;
@@ -378,7 +380,7 @@ export function ProjectModal({
                       <div className="relative group/status">
                         <button
                           className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium hover:ring-2 hover:ring-offset-1 hover:ring-offset-[#18181b] transition-all"
-                          style={{ backgroundColor: `${STATUS_COLORS[currentStatus]}20`, color: STATUS_COLORS[currentStatus], ringColor: STATUS_COLORS[currentStatus] }}
+                          style={{ backgroundColor: `${STATUS_COLORS[currentStatus]}20`, color: STATUS_COLORS[currentStatus], '--tw-ring-color': STATUS_COLORS[currentStatus] } as React.CSSProperties}
                         >
                           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[currentStatus] }} />
                           {STATUS_LABELS[currentStatus]}
@@ -415,8 +417,8 @@ export function ProjectModal({
                             style={currentGroupData ? {
                               backgroundColor: `${currentGroupData.color}20`,
                               color: currentGroupData.color,
-                              ringColor: currentGroupData.color,
-                            } : {}}
+                              '--tw-ring-color': currentGroupData.color,
+                            } as React.CSSProperties : {}}
                           >
                             {currentGroupData ? (
                               <>
@@ -638,6 +640,16 @@ export function ProjectModal({
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* TODO 섹션 */}
+              <div className="p-4 border-b border-[#27272a]">
+                <ProjectTodos projectPath={project.path} projectName={project.name} />
+              </div>
+
+              {/* AI 어시스턴트 섹션 */}
+              <div className="p-4 border-b border-[#27272a]">
+                <AIAssistant projectPath={project.path} projectName={project.name} />
               </div>
 
               {/* 액션 버튼들 */}

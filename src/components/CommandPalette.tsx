@@ -33,6 +33,9 @@ interface CommandPaletteProps {
   onRunProject: (project: Project) => void;
   onRefresh: () => void;
   onOpenAI?: (project: Project, action: 'summarize' | 'generateReadme' | 'suggestImprovements') => void;
+  onFilterType?: () => void;
+  onSortChange?: () => void;
+  onOpenTerminal?: () => void;
 }
 
 export function CommandPalette({
@@ -43,6 +46,9 @@ export function CommandPalette({
   onRunProject,
   onRefresh,
   onOpenAI,
+  onFilterType,
+  onSortChange,
+  onOpenTerminal,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState('');
 
@@ -207,6 +213,7 @@ export function CommandPalette({
                     </span>
                   </Command.Item>
                   <Command.Item
+                    onSelect={() => { onFilterType?.(); onOpenChange(false); }}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-300 cursor-pointer data-[selected=true]:bg-zinc-800 data-[selected=true]:text-white"
                   >
                     <Filter className="w-4 h-4 text-zinc-500" />
@@ -216,6 +223,7 @@ export function CommandPalette({
                     </span>
                   </Command.Item>
                   <Command.Item
+                    onSelect={() => { onSortChange?.(); onOpenChange(false); }}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-300 cursor-pointer data-[selected=true]:bg-zinc-800 data-[selected=true]:text-white"
                   >
                     <SortAsc className="w-4 h-4 text-zinc-500" />
@@ -225,6 +233,7 @@ export function CommandPalette({
                     </span>
                   </Command.Item>
                   <Command.Item
+                    onSelect={() => { onOpenTerminal?.(); onOpenChange(false); }}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-300 cursor-pointer data-[selected=true]:bg-zinc-800 data-[selected=true]:text-white"
                   >
                     <Terminal className="w-4 h-4 text-zinc-500" />

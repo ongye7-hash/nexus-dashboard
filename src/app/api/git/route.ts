@@ -183,3 +183,68 @@ export async function GET(request: Request) {
 
   return NextResponse.json(info);
 }
+
+export async function POST(request: Request) {
+  try {
+    const { action, path: projectPath, message } = await request.json();
+
+    const validation = validateProjectPath(projectPath);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const safePath = validation.sanitizedPath!;
+
+    switch (action) {
+      case 'commit': {
+        if (!message) return NextResponse.json({ error: 'Commit message required' }, { status: 400 });
+        // Stage all changes
+        const addResult = execGit(safePath, 'add -A');
+        if (addResult === null) {
+          return NextResponse.json({ error: 'Failed to stage changes' }, { status: 500 });
+        }
+        // Commit - need to use execSync directly for message with special chars
+        try {
+          execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+            cwd: safePath,
+            encoding: 'utf-8',
+            timeout: 10000,
+            windowsHide: true,
+          });
+          // Record activity
+          const { recordActivity, updateStreak } = await import('@/lib/database');
+          recordActivity('commit');
+          updateStreak();
+          return NextResponse.json({ success: true, message: 'Committed successfully' });
+        } catch (e: unknown) {
+          const errorMessage = e instanceof Error ? e.message : 'Commit failed';
+          return NextResponse.json({ error: errorMessage }, { status: 500 });
+        }
+      }
+      case 'push': {
+        const result = execGit(safePath, 'push');
+        if (result === null) {
+          // Try with setting upstream
+          const branch = execGit(safePath, 'rev-parse --abbrev-ref HEAD');
+          if (branch) {
+            const pushResult = execGit(safePath, `push -u origin ${branch}`);
+            if (pushResult === null) {
+              return NextResponse.json({ error: 'Push failed' }, { status: 500 });
+            }
+          }
+        }
+        return NextResponse.json({ success: true, message: 'Pushed successfully' });
+      }
+      case 'pull': {
+        const result = execGit(safePath, 'pull');
+        if (result === null) {
+          return NextResponse.json({ error: 'Pull failed' }, { status: 500 });
+        }
+        return NextResponse.json({ success: true, message: result });
+      }
+      default:
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    }
+  } catch (error) {
+    return NextResponse.json({ error: 'Git operation failed' }, { status: 500 });
+  }
+}
