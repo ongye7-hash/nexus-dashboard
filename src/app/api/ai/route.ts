@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { getSetting, setSetting } from '@/lib/database';
+import { getSetting, setSetting, deleteSetting } from '@/lib/database';
 import { encrypt, decrypt } from '@/lib/crypto';
 
 const DEFAULT_MODEL = 'claude-opus-4-6';
+
+// 모델 정보 (한글 라벨 + 비용)
+const MODEL_INFO: Record<string, { label: string; cost: string; speed: string }> = {
+  'claude-opus-4-6': { label: 'Opus 4.6 (최고 성능)', cost: '$$$$', speed: '느림' },
+  'claude-sonnet-4-6': { label: 'Sonnet 4.6 (균형)', cost: '$$', speed: '보통' },
+  'claude-haiku-4-5-20251001': { label: 'Haiku 4.5 (빠름)', cost: '$', speed: '빠름' },
+};
 
 // Claude API 호출
 async function callClaude(
@@ -30,7 +37,11 @@ async function callClaude(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Claude API error: ${res.status}`);
+    const msg = err.error?.message || `API 응답 오류 (${res.status})`;
+    if (res.status === 401) throw new Error('API 키가 유효하지 않습니다. 설정에서 확인하세요.');
+    if (res.status === 429) throw new Error('요청 한도 초과. 잠시 후 다시 시도하세요.');
+    if (res.status === 529) throw new Error('Claude 서버가 과부하 상태입니다. 잠시 후 다시 시도하세요.');
+    throw new Error(msg);
   }
 
   const data = await res.json();
@@ -48,72 +59,173 @@ function getApiKey(): string | null {
   }
 }
 
-// 프로젝트 코드 읽기 (주요 파일만)
-function readProjectCode(projectPath: string): string {
-  const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs'];
-  const ignoreDirs = ['node_modules', '.git', '.next', 'dist', 'build', '.vercel'];
-  let content = '';
-  let fileCount = 0;
-  const maxFiles = 15;
-  const maxChars = 12000;
+// ============ 프로젝트 코드 읽기 (개선됨) ============
 
-  function walkDir(dir: string) {
-    if (fileCount >= maxFiles || content.length >= maxChars) return;
+// 중요도 기반 파일 우선순위
+const FILE_PRIORITY: Record<string, number> = {
+  'package.json': 100,
+  'tsconfig.json': 90,
+  'next.config.ts': 90,
+  'next.config.js': 90,
+  'vite.config.ts': 90,
+  'tailwind.config.ts': 80,
+  'tailwind.config.js': 80,
+  '.env.example': 70,
+  'docker-compose.yml': 70,
+  'Dockerfile': 70,
+  'requirements.txt': 85,
+  'pyproject.toml': 85,
+  'Cargo.toml': 85,
+  'go.mod': 85,
+};
+
+// 확장자별 우선순위
+const EXT_PRIORITY: Record<string, number> = {
+  '.ts': 60, '.tsx': 65, '.js': 55, '.jsx': 60,
+  '.py': 60, '.go': 60, '.rs': 60, '.java': 55,
+  '.css': 30, '.scss': 30,
+  '.sql': 40, '.prisma': 50,
+  '.md': 20, '.json': 25, '.yml': 25, '.yaml': 25,
+  '.html': 35, '.vue': 60, '.svelte': 60,
+};
+
+const CODE_EXTENSIONS = Object.keys(EXT_PRIORITY);
+const IGNORE_DIRS = ['node_modules', '.git', '.next', 'dist', 'build', '.vercel', '__pycache__', '.venv', 'venv', '.nexus-data'];
+
+interface FileEntry {
+  path: string;
+  relativePath: string;
+  priority: number;
+  size: number;
+}
+
+function collectFiles(projectPath: string): FileEntry[] {
+  const files: FileEntry[] = [];
+
+  function walkDir(dir: string, depth: number) {
+    if (depth > 4) return; // 최대 4단계 깊이
 
     try {
       const items = fs.readdirSync(dir);
       for (const item of items) {
-        if (fileCount >= maxFiles || content.length >= maxChars) break;
-        if (ignoreDirs.includes(item)) continue;
+        if (IGNORE_DIRS.includes(item) || item.startsWith('.')) continue;
 
         const fullPath = path.join(dir, item);
         const stat = fs.statSync(fullPath);
 
         if (stat.isDirectory()) {
-          walkDir(fullPath);
+          walkDir(fullPath, depth + 1);
         } else if (stat.isFile()) {
+          const relativePath = path.relative(projectPath, fullPath);
           const ext = path.extname(item).toLowerCase();
-          if (codeExtensions.includes(ext)) {
-            const fileContent = fs.readFileSync(fullPath, 'utf-8');
-            const relativePath = path.relative(projectPath, fullPath);
-            content += `\n--- ${relativePath} ---\n`;
-            content += fileContent.slice(0, 2000);
-            if (fileContent.length > 2000) content += '\n... (truncated)';
-            content += '\n';
-            fileCount++;
-          }
+          const baseName = path.basename(item);
+
+          // 우선순위 계산
+          let priority = FILE_PRIORITY[baseName] || EXT_PRIORITY[ext] || 0;
+          if (priority === 0) continue; // 우선순위 없는 파일은 스킵
+
+          // src/ 폴더 내 파일은 우선순위 +10
+          if (relativePath.startsWith('src')) priority += 10;
+          // page/route/layout/index 파일은 +15
+          if (/^(page|route|layout|index|main|app)\./i.test(baseName)) priority += 15;
+
+          files.push({ path: fullPath, relativePath, priority, size: stat.size });
         }
       }
-    } catch {
-      // ignore errors
-    }
-  }
-
-  walkDir(projectPath);
-  return content.slice(0, maxChars);
-}
-
-// 프로젝트 분석 (package.json 등)
-function analyzeProject(projectPath: string): Record<string, unknown> {
-  const info: Record<string, unknown> = { path: projectPath };
-
-  const pkgPath = path.join(projectPath, 'package.json');
-  if (fs.existsSync(pkgPath)) {
-    try {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      info.name = pkg.name;
-      info.description = pkg.description;
-      info.dependencies = Object.keys(pkg.dependencies || {});
-      info.devDependencies = Object.keys(pkg.devDependencies || {});
-      info.scripts = Object.keys(pkg.scripts || {});
     } catch {
       // ignore
     }
   }
 
-  info.hasReadme = fs.existsSync(path.join(projectPath, 'README.md'));
+  walkDir(projectPath, 0);
+
+  // 우선순위 높은 순으로 정렬
+  return files.sort((a, b) => b.priority - a.priority);
+}
+
+function readProjectCode(projectPath: string): string {
+  const files = collectFiles(projectPath);
+  const maxFiles = 25;
+  const maxChars = 30000; // Opus 4.6은 200K 토큰 처리 가능
+  let content = '';
+  let fileCount = 0;
+
+  for (const file of files) {
+    if (fileCount >= maxFiles || content.length >= maxChars) break;
+
+    try {
+      const fileContent = fs.readFileSync(file.path, 'utf-8');
+      const maxPerFile = Math.min(3000, maxChars - content.length);
+      content += `\n--- ${file.relativePath} ---\n`;
+      content += fileContent.slice(0, maxPerFile);
+      if (fileContent.length > maxPerFile) content += '\n... (truncated)';
+      content += '\n';
+      fileCount++;
+    } catch {
+      // ignore
+    }
+  }
+
+  return content;
+}
+
+// 프로젝트 분석 (package.json 등)
+function analyzeProject(projectPath: string): Record<string, unknown> {
+  const info: Record<string, unknown> = { path: projectPath, name: path.basename(projectPath) };
+
+  const pkgPath = path.join(projectPath, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      info.name = pkg.name || path.basename(projectPath);
+      info.description = pkg.description;
+      info.dependencies = Object.keys(pkg.dependencies || {});
+      info.devDependencies = Object.keys(pkg.devDependencies || {});
+      info.scripts = Object.keys(pkg.scripts || {});
+    } catch {}
+  }
+
+  // README 내용 (있으면 처음 500자)
+  const readmePath = path.join(projectPath, 'README.md');
+  if (fs.existsSync(readmePath)) {
+    try {
+      info.readme = fs.readFileSync(readmePath, 'utf-8').slice(0, 500);
+    } catch {}
+  }
+
+  // 파일 구조 요약
+  const files = collectFiles(projectPath);
+  info.fileStructure = files.slice(0, 30).map(f => f.relativePath);
+  info.totalFiles = files.length;
+
   return info;
 }
+
+// ============ 결과 캐시 ============
+
+const resultCache = new Map<string, { result: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5분
+
+function getCached(key: string): string | null {
+  const entry = resultCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    resultCache.delete(key);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCache(key: string, result: string): void {
+  resultCache.set(key, { result, timestamp: Date.now() });
+  // 오래된 캐시 정리 (최대 50개)
+  if (resultCache.size > 50) {
+    const oldest = [...resultCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
+    for (let i = 0; i < 10; i++) resultCache.delete(oldest[i][0]);
+  }
+}
+
+// ============ API 라우트 ============
 
 export async function GET(request: NextRequest) {
   const action = request.nextUrl.searchParams.get('action');
@@ -124,7 +236,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         online: !!apiKey,
         provider: 'claude',
-        models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+        models: Object.entries(MODEL_INFO).map(([id, info]) => ({ id, ...info })),
         defaultModel: DEFAULT_MODEL,
       });
     }
@@ -137,14 +249,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { action, projectPath, model } = body;
+    const { action, projectPath, model, noCache } = body;
 
-    // API 키 저장/삭제 액션
+    // API 키 저장
     if (action === 'saveApiKey') {
       const { apiKey } = body;
       if (!apiKey) return NextResponse.json({ error: 'API 키가 필요합니다' }, { status: 400 });
 
-      // Claude API로 키 유효성 검증
       try {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -154,7 +265,7 @@ export async function POST(request: Request) {
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001', // 검증은 저렴한 모델로
+            model: 'claude-haiku-4-5-20251001',
             max_tokens: 10,
             messages: [{ role: 'user', content: 'Hi' }],
           }),
@@ -171,16 +282,40 @@ export async function POST(request: Request) {
     }
 
     if (action === 'deleteApiKey') {
-      const { deleteSetting } = await import('@/lib/database');
       deleteSetting('claude_api_key');
       return NextResponse.json({ success: true });
+    }
+
+    // 리뷰 결과를 파일로 저장 (Claude Code 적용용)
+    if (action === 'saveReview') {
+      const { content, projectName } = body;
+      if (!content) return NextResponse.json({ error: '내용이 필요합니다' }, { status: 400 });
+
+      const reviewDir = path.join(process.cwd(), '.nexus-data', 'reviews');
+      if (!fs.existsSync(reviewDir)) fs.mkdirSync(reviewDir, { recursive: true });
+
+      const fileName = `review-${projectName || 'unknown'}-${Date.now()}.md`;
+      const filePath = path.join(reviewDir, fileName);
+      fs.writeFileSync(filePath, content, 'utf-8');
+
+      return NextResponse.json({ success: true, filePath, fileName });
+    }
+
+    // README 프로젝트에 저장
+    if (action === 'saveReadme') {
+      const { content } = body;
+      if (!content || !projectPath) return NextResponse.json({ error: '내용과 경로가 필요합니다' }, { status: 400 });
+
+      const readmePath = path.join(projectPath, 'README.md');
+      fs.writeFileSync(readmePath, content, 'utf-8');
+      return NextResponse.json({ success: true, path: readmePath });
     }
 
     // AI 기능 실행
     const apiKey = getApiKey();
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Claude API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.' },
+        { error: 'Claude API 키가 설정되지 않았습니다. AI 어시스턴트에서 API 키를 입력하세요.' },
         { status: 401 }
       );
     }
@@ -189,6 +324,12 @@ export async function POST(request: Request) {
 
     switch (action) {
       case 'summarize': {
+        const cacheKey = `summarize:${projectPath}:${selectedModel}`;
+        if (!noCache) {
+          const cached = getCached(cacheKey);
+          if (cached) return NextResponse.json({ success: true, summary: cached, cached: true });
+        }
+
         const code = readProjectCode(projectPath);
         const projectInfo = analyzeProject(projectPath);
 
@@ -201,15 +342,17 @@ ${JSON.stringify(projectInfo, null, 2)}
 ${code}
 
 다음을 한국어로 작성해주세요:
-1. 프로젝트 요약 (2-3 문장)
-2. 주요 기능
-3. 사용된 기술 스택
-4. 프로젝트 구조 특징`;
+1. **프로젝트 요약** (2-3 문장으로 이 프로젝트가 뭔지)
+2. **주요 기능** (핵심 기능 목록)
+3. **기술 스택** (사용된 라이브러리/프레임워크)
+4. **프로젝트 구조** (디렉토리 구조와 아키텍처 특징)
+5. **주목할 점** (잘 만든 부분이나 특이한 점)`;
 
         const summary = await callClaude(prompt,
-          '당신은 코드 분석 전문가입니다. 항상 한국어로 응답하세요. 간결하고 실용적으로 답하세요.',
+          '당신은 시니어 개발자입니다. 프로젝트를 분석하고 핵심을 정확히 파악해주세요. 항상 한국어로 응답하세요. 마크다운으로 깔끔하게 작성하세요.',
           apiKey, selectedModel);
 
+        setCache(cacheKey, summary);
         return NextResponse.json({ success: true, summary });
       }
 
@@ -227,17 +370,19 @@ ${JSON.stringify(projectInfo, null, 2)}
 코드 샘플:
 ${code}
 
-다음 섹션을 포함한 마크다운을 생성하세요:
-1. # 프로젝트 이름
-2. ## 소개
-3. ## 주요 기능
-4. ## 기술 스택
-5. ## 설치 방법
-6. ## 사용법
-7. ## 프로젝트 구조`;
+다음 섹션을 포함한 전문적인 마크다운을 생성하세요:
+1. # ${projectName}
+2. ## 소개 (프로젝트 설명)
+3. ## 주요 기능 (기능 목록)
+4. ## 기술 스택 (사용된 기술)
+5. ## 시작하기 (설치 및 실행 방법)
+6. ## 사용법 (기본 사용법)
+7. ## 프로젝트 구조 (디렉토리 트리)
+
+실용적이고 실제로 사용할 수 있는 README를 작성하세요.`;
 
         const readme = await callClaude(prompt,
-          '당신은 기술 문서 작가입니다. 깔끔하고 전문적인 README를 한국어로 작성하세요. 마크다운 문법을 올바르게 사용하세요.',
+          '당신은 기술 문서 작가입니다. 깔끔하고 전문적인 README를 한국어로 작성하세요. 마크다운 문법을 올바르게 사용하세요. 코드 블록, 테이블 등을 활용하세요.',
           apiKey, selectedModel);
 
         return NextResponse.json({ success: true, readme });
@@ -246,7 +391,7 @@ ${code}
       case 'explainCode': {
         const { filePath, lineStart, lineEnd } = body;
         if (!filePath || !fs.existsSync(filePath)) {
-          return NextResponse.json({ error: 'File not found' }, { status: 404 });
+          return NextResponse.json({ error: '파일을 찾을 수 없습니다' }, { status: 404 });
         }
 
         const fileContent = fs.readFileSync(filePath, 'utf-8');
@@ -260,23 +405,29 @@ ${code}
 ${codeSlice}
 \`\`\`
 
-설명:
-1. 이 코드가 하는 일
-2. 주요 로직 설명
-3. 개선 가능한 점 (있다면)`;
+다음을 포함해서 설명하세요:
+1. **이 코드가 하는 일** (한 문장 요약)
+2. **상세 로직** (단계별 설명)
+3. **개선 가능한 점** (있다면)`;
 
         const explanation = await callClaude(prompt,
-          '당신은 코드 교사입니다. 코드를 명확하게 한국어로 설명하세요. 간결하고 교육적으로.',
+          '당신은 코드 교사입니다. 코드를 명확하게 한국어로 설명하세요.',
           apiKey, selectedModel);
 
         return NextResponse.json({ success: true, explanation });
       }
 
       case 'suggestImprovements': {
+        const cacheKey = `improve:${projectPath}:${selectedModel}`;
+        if (!noCache) {
+          const cached = getCached(cacheKey);
+          if (cached) return NextResponse.json({ success: true, suggestions: cached, cached: true });
+        }
+
         const code = readProjectCode(projectPath);
         const projectInfo = analyzeProject(projectPath);
 
-        const prompt = `이 프로젝트를 리뷰하고 개선점을 한국어로 제안해주세요:
+        const prompt = `이 프로젝트를 리뷰하고 개선점을 제안해주세요:
 
 프로젝트 정보:
 ${JSON.stringify(projectInfo, null, 2)}
@@ -284,29 +435,45 @@ ${JSON.stringify(projectInfo, null, 2)}
 코드 샘플:
 ${code}
 
-제안사항:
-1. 코드 품질 개선점 (3-5개)
-2. 구조적 개선 제안
-3. 성능 최적화 팁
-4. 보안 고려사항
+다음 관점에서 구체적으로 분석하세요:
 
-구체적이고 실용적으로 작성하세요.`;
+## 1. 코드 품질
+- 버그 가능성이 있는 코드
+- 타입 안정성 문제
+- 에러 핸들링 누락
+
+## 2. 구조적 개선
+- 컴포넌트/모듈 분리가 필요한 곳
+- 중복 코드
+- 관심사 분리 위반
+
+## 3. 성능
+- 불필요한 리렌더링
+- N+1 쿼리 패턴
+- 메모리 누수 가능성
+
+## 4. 보안
+- 입력 검증 누락
+- 인젝션 위험
+- 민감 정보 노출
+
+각 항목에 **파일명:줄번호**를 포함해서 구체적으로 지적하세요.
+수정 방법도 코드 예시와 함께 제안하세요.`;
 
         const suggestions = await callClaude(prompt,
-          '당신은 시니어 코드 리뷰어입니다. 건설적인 피드백을 한국어로 제공하세요. 구체적이고 도움이 되게.',
+          '당신은 시니어 코드 리뷰어입니다. 실제로 적용 가능한 구체적인 피드백을 한국어로 제공하세요. 파일명과 줄번호를 명시하세요. 코드 수정 예시를 포함하세요.',
           apiKey, selectedModel);
 
+        setCache(cacheKey, suggestions);
         return NextResponse.json({ success: true, suggestions });
       }
 
       default:
-        return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+        return NextResponse.json({ error: '알 수 없는 액션입니다' }, { status: 400 });
     }
   } catch (error) {
     console.error('AI API error:', error);
-    return NextResponse.json(
-      { error: 'AI 작업 실패', details: String(error) },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'AI 작업에 실패했습니다';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

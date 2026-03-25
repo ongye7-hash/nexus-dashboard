@@ -2,9 +2,17 @@
 
 import { useState, useCallback, useEffect } from 'react';
 
+interface ModelInfo {
+  id: string;
+  label: string;
+  cost: string;
+  speed: string;
+}
+
 interface AIStatus {
   online: boolean;
-  models: string[];
+  provider: string;
+  models: ModelInfo[];
   defaultModel: string;
 }
 
@@ -20,21 +28,19 @@ export function useAI() {
       const data = await res.json();
       setStatus(data);
       return data;
-    } catch (err) {
-      setStatus({ online: false, models: [], defaultModel: '' });
+    } catch {
+      setStatus({ online: false, provider: 'claude', models: [], defaultModel: '' });
       return null;
     }
   }, []);
 
-  // 초기 상태 확인
   useEffect(() => {
     checkStatus();
   }, [checkStatus]);
 
-  // 프로젝트 요약
-  const summarizeProject = useCallback(async (
-    projectPath: string,
-    model?: string
+  const callAI = useCallback(async (
+    action: string,
+    params: Record<string, unknown>
   ): Promise<string | null> => {
     setLoading(true);
     setError(null);
@@ -43,133 +49,42 @@ export function useAI() {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'summarize',
-          projectPath,
-          model,
-        }),
+        body: JSON.stringify({ action, ...params }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to summarize');
+        throw new Error(data.error || 'AI 요청 실패');
       }
 
-      return data.summary;
+      return data.summary || data.readme || data.explanation || data.suggestions || null;
     } catch (err) {
-      setError(String(err));
+      const message = err instanceof Error ? err.message : 'AI 요청에 실패했습니다';
+      setError(message);
       return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // README 생성
-  const generateReadme = useCallback(async (
-    projectPath: string,
-    model?: string
-  ): Promise<string | null> => {
-    setLoading(true);
-    setError(null);
+  const summarizeProject = useCallback(async (projectPath: string, model?: string) => {
+    return callAI('summarize', { projectPath, model });
+  }, [callAI]);
 
-    try {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'generateReadme',
-          projectPath,
-          model,
-        }),
-      });
+  const generateReadme = useCallback(async (projectPath: string, model?: string) => {
+    return callAI('generateReadme', { projectPath, model });
+  }, [callAI]);
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate README');
-      }
-
-      return data.readme;
-    } catch (err) {
-      setError(String(err));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // 코드 설명
   const explainCode = useCallback(async (
-    filePath: string,
-    lineStart: number,
-    lineEnd?: number,
-    model?: string
-  ): Promise<string | null> => {
-    setLoading(true);
-    setError(null);
+    filePath: string, lineStart: number, lineEnd?: number, model?: string
+  ) => {
+    return callAI('explainCode', { filePath, lineStart, lineEnd, model });
+  }, [callAI]);
 
-    try {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'explainCode',
-          filePath,
-          lineStart,
-          lineEnd,
-          model,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to explain code');
-      }
-
-      return data.explanation;
-    } catch (err) {
-      setError(String(err));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // 개선점 제안
-  const suggestImprovements = useCallback(async (
-    projectPath: string,
-    model?: string
-  ): Promise<string | null> => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'suggestImprovements',
-          projectPath,
-          model,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to get suggestions');
-      }
-
-      return data.suggestions;
-    } catch (err) {
-      setError(String(err));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const suggestImprovements = useCallback(async (projectPath: string, model?: string) => {
+    return callAI('suggestImprovements', { projectPath, model });
+  }, [callAI]);
 
   return {
     status,
