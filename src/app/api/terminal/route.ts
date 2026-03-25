@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-
-const TOKEN_PATH = path.join(process.cwd(), '.nexus-data', 'terminal-token');
+import { cookies } from 'next/headers';
 
 export async function GET() {
   try {
-    // 서버가 생성한 토큰 읽기
-    const token = fs.existsSync(TOKEN_PATH)
-      ? fs.readFileSync(TOKEN_PATH, 'utf-8').trim()
-      : null;
+    // 클라이언트의 JWT를 WebSocket 인증 토큰으로 전달
+    // (WebSocket은 쿠키를 자동 전송하지 않으므로 URL 파라미터로 전달)
+    const cookieStore = await cookies();
+    const token = cookieStore.get('nexus_token')?.value || null;
 
     return NextResponse.json({
       wsUrl: 'ws://localhost:8508',

@@ -1,5 +1,14 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Auth: JWT secret을 process.env에 로드 (middleware Edge Runtime용)
+    try {
+      const { loadJwtSecret } = await import('./lib/auth');
+      loadJwtSecret();
+      console.log('[Auth] JWT secret loaded');
+    } catch (error) {
+      console.error('Failed to load JWT secret:', error);
+    }
+
     // File logging
     try {
       const { setupFileLogging } = await import('./lib/logger');

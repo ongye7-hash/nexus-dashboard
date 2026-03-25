@@ -168,4 +168,27 @@ function initializeTables() {
       completed_at TEXT
     )
   `);
+
+  // 인증 세션 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      is_revoked INTEGER DEFAULT 0
+    )
+  `);
+
+  // 로그인 시도 추적 (Rate Limiting)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ip_address TEXT NOT NULL,
+      attempted_at TEXT NOT NULL,
+      success INTEGER DEFAULT 0
+    )
+  `);
 }

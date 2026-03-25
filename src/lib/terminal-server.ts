@@ -2,23 +2,37 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as pty from 'node-pty';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { jwtVerify } from 'jose';
 // ssh2는 handleSSHConnection 안에서 동적 import (Turbopack 호환)
 
 const PORT = 8508;
 
-// 서버 시작 시 랜덤 토큰 생성 (외부 접근 방지)
-const AUTH_TOKEN = crypto.randomBytes(32).toString('hex');
+// JWT 기반 인증 (기존 랜덤 토큰 → JWT 통합)
+async function verifyWsToken(token: string): Promise<boolean> {
+  try {
+    const secretHex = process.env.NEXUS_JWT_SECRET;
+    if (!secretHex) return false;
+    const secret = new Uint8Array(Buffer.from(secretHex, 'hex'));
+    await jwtVerify(token, secret);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-// 토큰을 파일로 저장 (API 라우트에서 읽어서 클라이언트에 전달)
-const TOKEN_PATH = require('path').join(process.cwd(), '.nexus-data', 'terminal-token');
-
-// 허용된 origin 목록 (localhost만)
-const ALLOWED_ORIGINS = [
-  'http://localhost:8507',
-  'http://127.0.0.1:8507',
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-];
+// 허용된 origin 목록 (localhost + 환경변수로 외부 도메인 추가 가능)
+function getAllowedOrigins(): string[] {
+  const origins = [
+    'http://localhost:8507',
+    'http://127.0.0.1:8507',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ];
+  // 외부 배포 시 NEXUS_ORIGIN 환경변수로 추가 origin 허용
+  const extraOrigin = process.env.NEXUS_ORIGIN;
+  if (extraOrigin) origins.push(extraOrigin);
+  return origins;
+}
 
 interface TerminalSession {
   pty: pty.IPty;
@@ -43,32 +57,24 @@ function createServer() {
     return serverInstance;
   }
 
-  // 토큰 파일 저장
-  try {
-    const dir = require('path').dirname(TOKEN_PATH);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(TOKEN_PATH, AUTH_TOKEN, 'utf-8');
-  } catch (e) {
-    console.error('Failed to write terminal token:', e);
-  }
-
   const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT });
   serverInstance = wss;
   console.log(`Terminal WebSocket server running on ws://localhost:${PORT}`);
 
-  wss.on('connection', (ws: WebSocket, req) => {
+  wss.on('connection', async (ws: WebSocket, req) => {
     // Origin 검증
     const origin = req.headers.origin || '';
-    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+    const allowedOrigins = getAllowedOrigins();
+    if (origin && !allowedOrigins.includes(origin)) {
       ws.close(4003, 'Forbidden origin');
       return;
     }
 
     const url = new URL(req.url || '', `http://localhost:${PORT}`);
 
-    // 토큰 검증
+    // JWT 토큰 검증
     const clientToken = url.searchParams.get('token');
-    if (clientToken !== AUTH_TOKEN) {
+    if (!clientToken || !(await verifyWsToken(clientToken))) {
       ws.close(4001, 'Unauthorized');
       return;
     }
@@ -79,7 +85,7 @@ function createServer() {
       return;
     }
 
-    const sessionId = `term-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sessionId = `term-${crypto.randomUUID()}`;
 
     // SSH mode detection
     const mode = url.searchParams.get('mode') || 'local';
