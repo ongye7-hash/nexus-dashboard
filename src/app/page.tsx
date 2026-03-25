@@ -25,8 +25,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { Sidebar } from '@/components/Sidebar';
 import { ProjectModal } from '@/components/ProjectModal';
 import { GroupManager } from '@/components/GroupManager';
-import { GitHubSettings } from '@/components/GitHubSettings';
-import { VPSSettings } from '@/components/VPSSettings';
+import { SettingsModal } from '@/components/SettingsModal';
 import { MorningCodex } from '@/components/MorningCodex';
 import { CodeSearch } from '@/components/CodeSearch';
 import { useToast } from '@/components/Toast';
@@ -52,7 +51,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [codeSearchOpen, setCodeSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [vpsSettingsOpen, setVPSSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'github' | 'vps' | 'ai'>('github');
   const [globalTerminalOpen, setGlobalTerminalOpen] = useState(false);
   const { showToast } = useToast();
   const easterEggs = useEasterEggs();
@@ -550,8 +549,7 @@ export default function Home() {
         onManageGroups={() => setGroupManagerOpen(true)}
         isMobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenVPSSettings={() => setVPSSettingsOpen(true)}
+        onOpenSettings={() => { setSettingsTab('github'); setSettingsOpen(true); }}
       />
 
       <main className="lg:ml-64 min-h-screen">
@@ -900,16 +898,11 @@ export default function Home() {
         projects={projects}
       />
 
-      {/* GitHub 설정 */}
-      <GitHubSettings
+      {/* 통합 설정 */}
+      <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-      />
-
-      {/* VPS 설정 */}
-      <VPSSettings
-        open={vpsSettingsOpen}
-        onClose={() => setVPSSettingsOpen(false)}
+        initialTab={settingsTab}
       />
 
       {/* 이스터에그 효과 */}

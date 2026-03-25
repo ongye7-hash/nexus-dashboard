@@ -51,7 +51,6 @@ interface SidebarProps {
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
   onOpenSettings?: () => void;
-  onOpenVPSSettings?: () => void;
 }
 
 const TAG_COLORS = [
@@ -90,7 +89,7 @@ const TYPE_FILTERS = [
   { id: 'html', label: 'HTML (웹페이지)', icon: Globe, color: '#e34c26' },
 ];
 
-export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], groups = [], groupCounts = {}, onManageGroups, isMobileOpen, onMobileClose, onOpenSettings, onOpenVPSSettings }: SidebarProps) {
+export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], groups = [], groupCounts = {}, onManageGroups, isMobileOpen, onMobileClose, onOpenSettings }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   const handleFilterChange = (filter: string) => {
@@ -366,15 +365,6 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
         {/* 하단 */}
         {!collapsed && (
           <div className="p-3 border-t border-[#1f1f23]">
-            {onOpenVPSSettings && (
-              <button
-                onClick={onOpenVPSSettings}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors"
-              >
-                <Server className="w-4 h-4" />
-                <span>VPS 설정</span>
-              </button>
-            )}
             <button
               onClick={() => onOpenSettings?.()}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 transition-colors"
