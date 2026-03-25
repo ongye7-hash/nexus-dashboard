@@ -345,20 +345,26 @@ export async function GET() {
       const vpsServers = getAllVPSServers();
       const VPS_TIMEOUT = 5000;
 
+      // 연결 추적 (타임아웃 시 정리용)
+      const activeConns: any[] = [];
+
       const vpsPromises = vpsServers.map(async (server) => {
         const vpsProjects: Project[] = [];
+        let conn: any = null;
         try {
-          const conn = await connectSSH(server);
-          const cwd = server.default_cwd || '/home';
-          const lsOutput = await sshExec(conn, `ls -d ${cwd}/*/ 2>/dev/null | head -30`);
+          conn = await connectSSH(server);
+          activeConns.push(conn);
+          const cwd = (server.default_cwd || '/home').replace(/[^a-zA-Z0-9/_.-]/g, '');
+          const lsOutput = await sshExec(conn, `ls -d '${cwd}'/*/ 2>/dev/null | head -30`);
           const dirs = lsOutput.split('\n').filter(Boolean);
 
           for (const dir of dirs) {
             const name = dir.replace(/\/$/, '').split('/').pop() || '';
             if (!name || name.startsWith('.')) continue;
+            const safeDir = dir.replace(/'/g, "'\\''");
 
             const checkResult = await sshExec(conn,
-              `cd "${dir}" && ls package.json .git requirements.txt pyproject.toml index.html 2>/dev/null | head -5`
+              `cd '${safeDir}' && ls package.json .git requirements.txt pyproject.toml index.html 2>/dev/null | head -5`
             );
             if (!checkResult) continue;
 
@@ -368,13 +374,13 @@ export async function GET() {
             let gitBranch = '';
             let lastCommit = '';
             if (hasGit) {
-              gitBranch = await sshExec(conn, `cd "${dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null`).catch(() => '');
-              lastCommit = await sshExec(conn, `cd "${dir}" && git log -1 --format="%s (%ar)" 2>/dev/null`).catch(() => '');
+              gitBranch = await sshExec(conn, `cd '${safeDir}' && git rev-parse --abbrev-ref HEAD 2>/dev/null`).catch(() => '');
+              lastCommit = await sshExec(conn, `cd '${safeDir}' && git log -1 --format="%s (%ar)" 2>/dev/null`).catch(() => '');
             }
 
             let framework = '';
             if (hasPackageJson) {
-              const pkgCheck = await sshExec(conn, `cd "${dir}" && cat package.json 2>/dev/null | head -50`).catch(() => '');
+              const pkgCheck = await sshExec(conn, `cd '${safeDir}' && cat package.json 2>/dev/null | head -50`).catch(() => '');
               if (pkgCheck.includes('"next"')) framework = 'Next.js';
               else if (pkgCheck.includes('"react"')) framework = 'React';
               else if (pkgCheck.includes('"vue"')) framework = 'Vue';
@@ -415,17 +421,22 @@ export async function GET() {
             });
           }
 
-          conn.end();
         } catch (err) {
           console.warn(`VPS ${server.name} 스캔 실패:`, err instanceof Error ? err.message : err);
+        } finally {
+          if (conn) { try { conn.end(); } catch { /* 연결 정리 */ } }
         }
         return vpsProjects;
       });
 
-      // 전체 VPS 스캔에 타임아웃 적용
+      // 전체 VPS 스캔에 타임아웃 적용 (타임아웃 시 남은 연결 정리)
       const vpsResults = await Promise.race([
         Promise.allSettled(vpsPromises),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VPS 스캔 타임아웃')), VPS_TIMEOUT)),
+        new Promise<never>((_, reject) => setTimeout(() => {
+          // 타임아웃 시 모든 활성 연결 정리
+          for (const c of activeConns) { try { c.end(); } catch { /* 정리 */ } }
+          reject(new Error('VPS 스캔 타임아웃'));
+        }, VPS_TIMEOUT)),
       ]).catch(() => [] as PromiseSettledResult<Project[]>[]);
 
       for (const result of vpsResults) {

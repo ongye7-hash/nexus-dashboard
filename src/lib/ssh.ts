@@ -8,14 +8,15 @@ export interface ServerLike {
   encrypted_credential: string | null;
 }
 
-export function sshExec(conn: any, command: string): Promise<string> {
+export function sshExec(conn: any, command: string, timeoutMs = 15000): Promise<string> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`sshExec timeout: ${command.slice(0, 50)}`)), timeoutMs);
     conn.exec(command, (err: any, stream: any) => {
-      if (err) return reject(err);
+      if (err) { clearTimeout(timer); return reject(err); }
       let output = '';
       stream.on('data', (data: Buffer) => { output += data.toString(); });
       stream.stderr.on('data', (data: Buffer) => { output += data.toString(); });
-      stream.on('close', () => resolve(output.trim()));
+      stream.on('close', () => { clearTimeout(timer); resolve(output.trim()); });
     });
   });
 }

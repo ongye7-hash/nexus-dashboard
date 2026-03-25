@@ -317,7 +317,7 @@ export function ProjectModal({
         body: JSON.stringify({
           serverId: project.vpsServerId,
           remotePath: project.path,
-          commands: ['git pull', 'pm2 restart all'],
+          commands: ['git pull', `pm2 restart ${project.name}`],
         }),
       });
       const data = await res.json();

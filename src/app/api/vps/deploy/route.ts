@@ -17,7 +17,10 @@ const ALLOWED_COMMANDS = [
 ];
 
 function isCommandAllowed(cmd: string): boolean {
-  return ALLOWED_COMMANDS.some(allowed => cmd.startsWith(allowed));
+  // 정확히 일치하거나, 허용된 명령 + 안전한 인자(앱 이름)만 허용
+  // 쉘 메타문자가 포함되면 거부
+  if (/[;&|`$(){}]/.test(cmd)) return false;
+  return ALLOWED_COMMANDS.some(allowed => cmd === allowed || cmd.match(new RegExp(`^${allowed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} [a-zA-Z0-9_.-]+$`)));
 }
 
 export async function POST(request: Request) {
@@ -58,21 +61,24 @@ export async function POST(request: Request) {
     const conn = await connectSSH(server);
     updateVPSLastConnected(serverId);
 
+    // 경로 새니타이징 (쉘 메타문자 제거)
+    const safePath = remotePath.replace(/[^a-zA-Z0-9/_.-]/g, '');
     const results: Array<{ command: string; output: string; success: boolean }> = [];
 
-    for (const cmd of commands) {
-      try {
-        const output = await sshExec(conn, `cd "${remotePath}" && ${cmd}`);
-        results.push({ command: cmd, output, success: true });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : '명령 실행 실패';
-        results.push({ command: cmd, output: msg, success: false });
-        // Stop on first failure
-        break;
+    try {
+      for (const cmd of commands) {
+        try {
+          const output = await sshExec(conn, `cd '${safePath}' && ${cmd}`);
+          results.push({ command: cmd, output, success: true });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : '명령 실행 실패';
+          results.push({ command: cmd, output: msg, success: false });
+          break;
+        }
       }
+    } finally {
+      conn.end();
     }
-
-    conn.end();
 
     const allSuccess = results.every(r => r.success);
     return NextResponse.json({
