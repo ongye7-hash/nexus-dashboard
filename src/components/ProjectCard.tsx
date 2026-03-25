@@ -104,6 +104,12 @@ export function ProjectCard({ project, index, onOpen, onRun, onTogglePin }: Proj
               {project.framework && (
                 <p className="text-xs text-zinc-500 mt-0.5">{project.framework}</p>
               )}
+              {/* 경로 출처 (다중 스캔 경로 구분용) */}
+              {!project.isGithubOnly && !project.isVPS && project.path && (
+                <span className="text-[10px] text-zinc-600 truncate max-w-[180px]" title={project.path}>
+                  {project.path.split('\\').slice(0, -1).pop() || ''}
+                </span>
+              )}
             </div>
           </div>
 

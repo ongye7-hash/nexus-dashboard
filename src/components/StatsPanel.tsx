@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { Loader2, Download } from 'lucide-react';
 import { useStats } from '@/hooks/useStats';
 import ActivityHeatmap from './ActivityHeatmap';
 import StreakDisplay from './StreakDisplay';
@@ -14,7 +16,25 @@ interface StatsPanelProps {
 }
 
 export default function StatsPanel({ projects = [] }: StatsPanelProps) {
-  const { data, loading, error } = useStats();
+  const { data, loading, error, refetch } = useStats();
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ totalCommits: number; daysImported: number } | null>(null);
+
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      const res = await fetch('/api/stats/import', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setImportResult(data);
+        refetch();
+      }
+    } catch (err) {
+      console.warn('Import failed:', err);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -118,9 +138,24 @@ export default function StatsPanel({ projects = [] }: StatsPanelProps) {
 
       {/* 활동 히트맵 */}
       <section>
-        <h3 className="text-lg font-bold text-zinc-200 mb-4 flex items-center gap-2">
-          <span>🌱</span> 활동 히트맵
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-zinc-200 flex items-center gap-2">
+            <span>🌱</span> 활동 히트맵
+          </h3>
+          <button
+            onClick={handleImport}
+            disabled={importing}
+            className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded-lg text-xs text-zinc-300 transition-colors"
+          >
+            {importing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+            {importing ? '가져오는 중...' : '과거 데이터 가져오기'}
+          </button>
+        </div>
+        {importResult && (
+          <div className="mb-3 px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-400">
+            {importResult.daysImported}일, {importResult.totalCommits}개 커밋 가져옴
+          </div>
+        )}
         <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 overflow-x-auto">
           <ActivityHeatmap data={data.activity} />
         </div>

@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { execFileSync } from 'child_process';
-import { linkGitHubRepoToLocal } from '@/lib/database';
+import { linkGitHubRepoToLocal, getSetting } from '@/lib/database';
 import path from 'path';
 import fs from 'fs';
 
-const DESKTOP_PATH = 'C:\\Users\\user\\Desktop';
+function getDefaultScanPath(): string {
+  const raw = getSetting('scan_paths');
+  if (!raw) return 'C:\\Users\\user\\Desktop';
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : 'C:\\Users\\user\\Desktop';
+  } catch { /* 파싱 실패 — 기본값 */
+    return 'C:\\Users\\user\\Desktop';
+  }
+}
 
 // GitHub URL만 허용 (커맨드 인젝션 방지)
 const ALLOWED_URL_PATTERN = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(?:\.git)?$/;
@@ -28,7 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid repo name' }, { status: 400 });
     }
 
-    const targetPath = path.join(DESKTOP_PATH, repoName);
+    const targetPath = path.join(getDefaultScanPath(), repoName);
 
     // Check if folder already exists
     if (fs.existsSync(targetPath)) {

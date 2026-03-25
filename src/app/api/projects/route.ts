@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
-import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos, getAllVPSServers } from '@/lib/database';
+import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos, getAllVPSServers, getSetting } from '@/lib/database';
 import { connectSSH, sshExec } from '@/lib/ssh';
 
 function detectLanguageType(language: string | null): ProjectType {
@@ -17,7 +17,16 @@ function detectLanguageType(language: string | null): ProjectType {
   return 'unknown';
 }
 
-const DESKTOP_PATH = 'C:\\Users\\user\\Desktop';
+function getScanPaths(): string[] {
+  const raw = getSetting('scan_paths');
+  if (!raw) return ['C:\\Users\\user\\Desktop'];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : ['C:\\Users\\user\\Desktop'];
+  } catch { /* 파싱 실패 — 기본값 */
+    return ['C:\\Users\\user\\Desktop'];
+  }
+}
 
 const IGNORED_FOLDERS = [
   'node_modules',
@@ -193,16 +202,27 @@ function loadAllMeta(): Record<string, any> {
 
 export async function GET() {
   try {
-    const items = fs.readdirSync(DESKTOP_PATH);
+    const scanPaths = getScanPaths();
     const meta = loadAllMeta();
     const projects: Project[] = [];
+    const seenPaths = new Set<string>();
+
+    for (const scanPath of scanPaths) {
+      let items: string[];
+      try {
+        items = fs.readdirSync(scanPath);
+      } catch { /* 스캔 경로 읽기 실패 — 건너뜀 */
+        continue;
+      }
 
     for (const item of items) {
       if (IGNORED_NAMES.includes(item)) continue;
       if (item.endsWith('.lnk')) continue;
       if (item.startsWith('.')) continue;
 
-      const fullPath = path.join(DESKTOP_PATH, item);
+      const fullPath = path.join(scanPath, item);
+      if (seenPaths.has(fullPath.toLowerCase())) continue;
+      seenPaths.add(fullPath.toLowerCase());
 
       try {
         const stat = fs.statSync(fullPath);
@@ -300,6 +320,7 @@ export async function GET() {
         console.error(`Error processing ${item}:`, e);
       }
     }
+    } // end scanPaths loop
 
     // GitHub-only 레포 추가 (로컬에 없는 것만)
     try {
@@ -475,10 +496,23 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { projectName, updates } = body;
+    const { projectName, projectPath: clientPath, updates } = body;
 
-    // 프로젝트 경로 찾기
-    const projectPath = path.join(DESKTOP_PATH, projectName);
+    // 프로젝트 경로 찾기: 클라이언트에서 전달된 경로 우선, 없으면 스캔 경로에서 검색
+    let projectPath = clientPath;
+    if (!projectPath && projectName) {
+      const scanPaths = getScanPaths();
+      for (const sp of scanPaths) {
+        const candidate = path.join(sp, projectName);
+        if (fs.existsSync(candidate)) {
+          projectPath = candidate;
+          break;
+        }
+      }
+      if (!projectPath) {
+        projectPath = path.join(scanPaths[0], projectName);
+      }
+    }
 
     // SQLite에 저장
     saveProjectMeta({

@@ -5,34 +5,46 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-const DESKTOP_PATH = 'C:\\Users\\user\\Desktop';
+function getScanPaths(): string[] {
+  const raw = getSetting('scan_paths');
+  if (!raw) return ['C:\\Users\\user\\Desktop'];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : ['C:\\Users\\user\\Desktop'];
+  } catch { /* 파싱 실패 — 기본값 */
+    return ['C:\\Users\\user\\Desktop'];
+  }
+}
 
 // Detect local projects' GitHub remote URLs
 function getLocalGitHubMappings(): Record<string, string> {
   const mappings: Record<string, string> = {}; // full_name -> local_path
+  const scanPaths = getScanPaths();
 
-  try {
-    const items = fs.readdirSync(DESKTOP_PATH, { withFileTypes: true });
-    for (const item of items) {
-      if (!item.isDirectory()) continue;
-      const fullPath = path.join(DESKTOP_PATH, item.name);
-      const gitDir = path.join(fullPath, '.git');
-      if (!fs.existsSync(gitDir)) continue;
+  for (const scanPath of scanPaths) {
+    try {
+      const items = fs.readdirSync(scanPath, { withFileTypes: true });
+      for (const item of items) {
+        if (!item.isDirectory()) continue;
+        const fullPath = path.join(scanPath, item.name);
+        const gitDir = path.join(fullPath, '.git');
+        if (!fs.existsSync(gitDir)) continue;
 
-      try {
-        const remoteUrl = execSync('git remote get-url origin', {
-          cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true,
-        }).trim();
+        try {
+          const remoteUrl = execSync('git remote get-url origin', {
+            cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true,
+          }).trim();
 
-        // Extract owner/repo from GitHub URL
-        const match = remoteUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
-        if (match) {
-          const fullName = `${match[1]}/${match[2]}`;
-          mappings[fullName.toLowerCase()] = fullPath;
-        }
-      } catch { /* origin remote 없는 레포 — 무시 */ }
-    }
-  } catch { /* Desktop 디렉토리 읽기 실패 — 무시 */ }
+          // Extract owner/repo from GitHub URL
+          const match = remoteUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+          if (match) {
+            const fullName = `${match[1]}/${match[2]}`;
+            mappings[fullName.toLowerCase()] = fullPath;
+          }
+        } catch { /* origin remote 없는 레포 — 무시 */ }
+      }
+    } catch { /* 스캔 경로 읽기 실패 — 무시 */ }
+  }
 
   return mappings;
 }

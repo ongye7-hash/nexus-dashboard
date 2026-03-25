@@ -7,12 +7,14 @@ import {
   FolderGit2 as GithubIcon,
   Server,
   Bot,
+  FolderOpen,
 } from 'lucide-react';
 import GitHubTab from './settings/GitHubTab';
 import VPSTab from './settings/VPSTab';
 import AITab from './settings/AITab';
+import ScanPathsTab from './settings/ScanPathsTab';
 
-type TabId = 'github' | 'vps' | 'ai';
+type TabId = 'github' | 'vps' | 'ai' | 'paths';
 
 interface SettingsModalProps {
   open: boolean;
@@ -24,6 +26,7 @@ const TABS = [
   { id: 'github' as const, label: 'GitHub', icon: GithubIcon },
   { id: 'vps' as const, label: 'VPS', icon: Server },
   { id: 'ai' as const, label: 'AI', icon: Bot },
+  { id: 'paths' as const, label: '경로', icon: FolderOpen },
 ];
 
 export function SettingsModal({ open, onClose, initialTab = 'github' }: SettingsModalProps) {
@@ -98,6 +101,7 @@ export function SettingsModal({ open, onClose, initialTab = 'github' }: Settings
                 {activeTab === 'github' && <GitHubTab />}
                 {activeTab === 'vps' && <VPSTab />}
                 {activeTab === 'ai' && <AITab />}
+                {activeTab === 'paths' && <ScanPathsTab />}
               </div>
             </div>
           </motion.div>

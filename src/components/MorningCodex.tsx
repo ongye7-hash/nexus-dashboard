@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Zap, Coffee, Play } from 'lucide-react';
 import { Project } from '@/lib/types';
 import { ConfirmDialog } from './ConfirmDialog';
 import FileActivityFeed from './FileActivityFeed';
 import MorningRoutineModal from './MorningRoutineModal';
+import { useNotifications } from '@/hooks/useNotifications';
 
 // 서브 컴포넌트
 import GreetingHeader from './codex/GreetingHeader';
@@ -78,6 +79,10 @@ interface MorningCodexProps {
 export function MorningCodex({
   projects, onRunProject, onOpenVSCode, onOpenTerminal, onSelectProject, onBatchRun,
 }: MorningCodexProps) {
+  // 브라우저 알림
+  const { sendNotification } = useNotifications();
+  const notifiedRef = useRef(false);
+
   // State
   const [gitInfoMap, setGitInfoMap] = useState<Record<string, GitInfo>>({});
   const [runningProcesses, setRunningProcesses] = useState<RunningProcess[]>([]);
@@ -203,7 +208,17 @@ export function MorningCodex({
       }
     }
     setAlerts(newAlerts);
-  }, [focusProjects, streak]);
+
+    // 위험 알림은 브라우저 알림으로도 발송 (최초 1회만)
+    const dangerAlerts = newAlerts.filter(a => a.severity === 'danger');
+    if (dangerAlerts.length > 0 && !notifiedRef.current) {
+      notifiedRef.current = true;
+      sendNotification(
+        'Nexus Dashboard',
+        dangerAlerts.map(a => `${a.title}: ${a.message}`).join('\n')
+      );
+    }
+  }, [focusProjects, streak, sendNotification]);
 
   // Initial load
   useEffect(() => {
