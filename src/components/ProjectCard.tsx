@@ -246,6 +246,21 @@ export function ProjectCard({ project, index, onOpen, onRun, onTogglePin }: Proj
                 {project.isGithubOnly ? 'GitHub' : 'GitHub 연결'}
               </span>
             )}
+            {project.githubActionsStatus && (
+              <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${
+                project.githubActionsStatus === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+                project.githubActionsStatus === 'failure' ? 'bg-red-500/20 text-red-400' :
+                'bg-amber-500/20 text-amber-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  project.githubActionsStatus === 'success' ? 'bg-emerald-400' :
+                  project.githubActionsStatus === 'failure' ? 'bg-red-400' :
+                  'bg-amber-400'
+                }`} />
+                {project.githubActionsStatus === 'success' ? 'CI 성공' :
+                 project.githubActionsStatus === 'failure' ? 'CI 실패' : 'CI 진행중'}
+              </span>
+            )}
             {project.isVPS && (
               <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
                 <Server className="w-3 h-3" />

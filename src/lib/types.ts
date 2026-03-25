@@ -26,6 +26,8 @@ export interface Project {
   isVPS?: boolean;
   vpsServerId?: string;
   vpsServerName?: string;
+  githubActionsStatus?: 'success' | 'failure' | 'pending' | null;
+  githubActionsUrl?: string;
 }
 
 export interface ProjectGroup {

@@ -129,6 +129,12 @@ export function ProjectModal({
   const [claudeAutoCommand, setClaudeAutoCommand] = useState<string>('claude');
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [actionsStatus, setActionsStatus] = useState<{ status: string; conclusion: string | null; name: string; updated_at: string; html_url: string } | null>(null);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issues, setIssues] = useState<Array<{ number: number; title: string; labels: string[]; assignee: string | null; html_url: string }>>([]);
+  const [issuesVisible, setIssuesVisible] = useState(false);
+  const [importingIssues, setImportingIssues] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (project) {
@@ -147,6 +153,24 @@ export function ProjectModal({
       setNewTag('');
       setDeploying(false);
       setDeployResult(null);
+      setActionsStatus(null);
+      setIssues([]);
+      setIssuesVisible(false);
+      setIssuesLoading(false);
+      setImportingIssues(false);
+      setImportResult(null);
+
+      // Fetch GitHub Actions status
+      if (project.githubFullName) {
+        fetch(`/api/github/status?repo=${encodeURIComponent(project.githubFullName)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.actionsStatus) {
+              setActionsStatus(data.actionsStatus);
+            }
+          })
+          .catch(err => console.warn('Actions status fetch failed:', err));
+      }
     }
   }, [project]);
 
@@ -301,6 +325,46 @@ export function ProjectModal({
       }
     } catch (error) {
       console.error('그룹 변경 실패:', error);
+    }
+  };
+
+  const fetchIssues = async () => {
+    if (!project.githubFullName) return;
+    setIssuesLoading(true);
+    try {
+      const res = await fetch(`/api/github/status?repo=${encodeURIComponent(project.githubFullName)}`);
+      const data = await res.json();
+      setIssues(data.issues || []);
+      setIssuesVisible(true);
+    } catch (err) {
+      console.warn('Issues fetch failed:', err);
+    } finally {
+      setIssuesLoading(false);
+    }
+  };
+
+  const importIssuesAsTodos = async (selectedIssues: typeof issues) => {
+    setImportingIssues(true);
+    try {
+      const res = await fetch('/api/github/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo: project.githubFullName,
+          projectPath: project.path,
+          issues: selectedIssues,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setImportResult(`${data.imported}개 Issue를 TODO로 가져왔습니다`);
+        setIssuesVisible(false);
+        setTimeout(() => setImportResult(null), 3000);
+      }
+    } catch (err) {
+      console.warn('Issue import failed:', err);
+    } finally {
+      setImportingIssues(false);
     }
   };
 
@@ -625,6 +689,18 @@ export function ProjectModal({
                       {project.isGithubOnly && (
                         <span className="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded">GitHub 전용</span>
                       )}
+                      {actionsStatus && (
+                        <a href={actionsStatus.html_url} target="_blank" rel="noopener noreferrer"
+                           className={`px-2 py-0.5 text-[10px] rounded-full ${
+                          actionsStatus.conclusion === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+                          actionsStatus.conclusion === 'failure' ? 'bg-red-500/20 text-red-400' :
+                          'bg-amber-500/20 text-amber-400'
+                        }`}>
+                          {actionsStatus.conclusion === 'success' ? 'CI 성공' :
+                           actionsStatus.conclusion === 'failure' ? 'CI 실패' :
+                           actionsStatus.status === 'in_progress' ? 'CI 진행중' : 'CI'}
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -703,6 +779,60 @@ export function ProjectModal({
                   </div>
                 )}
               </div>
+
+              {/* GitHub Issues → TODO 가져오기 */}
+              {project.githubFullName && !project.isGithubOnly && !project.isVPS && (
+                <div className="px-6 py-4 border-b border-[#27272a]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                      <IssueIcon className="w-4 h-4" />
+                      GitHub Issues
+                    </span>
+                    <button
+                      onClick={fetchIssues}
+                      disabled={issuesLoading}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      {issuesLoading ? '로딩...' : 'Issue 가져오기'}
+                    </button>
+                  </div>
+
+                  {importResult && (
+                    <div className="mb-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-400">
+                      {importResult}
+                    </div>
+                  )}
+
+                  {issuesVisible && issues.length > 0 && (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {issues.slice(0, 20).map((issue) => (
+                        <div key={issue.number} className="flex items-center gap-2 px-2 py-1.5 bg-zinc-800/50 rounded-lg text-xs">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${
+                            issue.labels.some((l: string) => ['bug', 'critical'].includes(l.toLowerCase())) ? 'bg-red-400' :
+                            issue.labels.some((l: string) => ['enhancement', 'feature'].includes(l.toLowerCase())) ? 'bg-amber-400' :
+                            'bg-green-400'
+                          }`} />
+                          <span className="text-zinc-300 truncate flex-1">#{issue.number} {issue.title}</span>
+                          {issue.assignee && (
+                            <span className="text-zinc-600 shrink-0">@{issue.assignee}</span>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => importIssuesAsTodos(issues)}
+                        disabled={importingIssues}
+                        className="w-full mt-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-xs text-white transition-colors"
+                      >
+                        {importingIssues ? '가져오는 중...' : `${issues.length}개 Issue를 TODO로 가져오기`}
+                      </button>
+                    </div>
+                  )}
+
+                  {issuesVisible && issues.length === 0 && !issuesLoading && (
+                    <p className="text-xs text-zinc-500">열린 Issue가 없습니다</p>
+                  )}
+                </div>
+              )}
 
               {/* TODO 섹션 */}
               <div className="p-4 border-b border-[#27272a]">
