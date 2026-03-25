@@ -1,0 +1,16 @@
+# 로컬 테스트용
+services:
+  nexus:
+    build: .
+    ports:
+      - "8507:8507"
+      - "8508:8508"
+    volumes:
+      - nexus-data:/app/.nexus-data
+    environment:
+      - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
+      - PORT=8507
+
+volumes:
+  nexus-data:

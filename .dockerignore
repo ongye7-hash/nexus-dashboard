@@ -1,0 +1,11 @@
+node_modules
+.next
+.nexus-data
+.git
+.gitignore
+*.md
+!README.md
+cli/node_modules
+tests
+.claude
+AI답변

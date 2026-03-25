@@ -57,7 +57,9 @@ function createServer() {
     return serverInstance;
   }
 
-  const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT });
+  // Docker 컨테이너에서는 0.0.0.0으로 바인딩해야 nginx에서 접근 가능
+  const wsHost = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+  const wss = new WebSocketServer({ host: wsHost, port: PORT });
   serverInstance = wss;
   console.log(`Terminal WebSocket server running on ws://localhost:${PORT}`);
 

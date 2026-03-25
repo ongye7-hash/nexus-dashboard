@@ -1,15 +1,30 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+
+function getWsUrl(requestHeaders: Headers): string {
+  // 배포 환경: nginx 뒤에서는 wss://도메인/ws/terminal 경로 사용
+  const host = requestHeaders.get('host') || 'localhost:8507';
+  const proto = requestHeaders.get('x-forwarded-proto');
+  const isSecure = proto === 'https';
+
+  if (isSecure || process.env.NODE_ENV === 'production') {
+    // 프로덕션: nginx가 /ws/terminal → 8508으로 프록시
+    return `${isSecure ? 'wss' : 'ws'}://${host}/ws/terminal`;
+  }
+
+  // 로컬 개발: 직접 연결
+  return 'ws://localhost:8508';
+}
 
 export async function GET() {
   try {
-    // 클라이언트의 JWT를 WebSocket 인증 토큰으로 전달
-    // (WebSocket은 쿠키를 자동 전송하지 않으므로 URL 파라미터로 전달)
     const cookieStore = await cookies();
     const token = cookieStore.get('nexus_token')?.value || null;
+    const requestHeaders = await headers();
+    const wsUrl = getWsUrl(requestHeaders);
 
     return NextResponse.json({
-      wsUrl: 'ws://localhost:8508',
+      wsUrl,
       token,
       status: token ? 'available' : 'unavailable',
     });

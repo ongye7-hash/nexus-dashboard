@@ -83,12 +83,14 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // 터미널 서버 토큰 가져오기
+    // 터미널 서버 토큰 + WebSocket URL 가져오기
     let token = '';
+    let baseWsUrl = 'ws://localhost:8508';
     try {
       const tokenRes = await fetch('/api/terminal');
       const tokenData = await tokenRes.json();
       token = tokenData.token || '';
+      baseWsUrl = tokenData.wsUrl || baseWsUrl;
       if (!token) {
         setError('터미널 서버가 아직 준비되지 않았습니다');
         return;
@@ -99,8 +101,8 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
       return;
     }
 
-    // Connect WebSocket (토큰 포함)
-    let wsUrl = `ws://localhost:8508?token=${encodeURIComponent(token)}`;
+    // Connect WebSocket (서버가 반환한 URL 사용)
+    let wsUrl = `${baseWsUrl}?token=${encodeURIComponent(token)}`;
 
     if (mode === 'ssh' && serverId) {
       wsUrl += `&mode=ssh&serverId=${encodeURIComponent(serverId)}`;
