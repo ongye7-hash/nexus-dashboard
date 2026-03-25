@@ -42,6 +42,9 @@ export default function AIAssistant({
   } = useAI();
 
   const [result, setResult] = useState<string | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
   const [currentAction, setCurrentAction] = useState<AIAction | null>(null);
   const [copied, setCopied] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -120,11 +123,11 @@ export default function AIAssistant({
           <span className="font-medium text-white">AI 어시스턴트</span>
           {isOnline ? (
             <span className="px-2 py-0.5 text-xs bg-emerald-500/10 text-emerald-400 rounded-full">
-              Ollama 연결됨
+              Claude 연결됨
             </span>
           ) : (
             <span className="px-2 py-0.5 text-xs bg-red-500/10 text-red-400 rounded-full">
-              오프라인
+              API 키 필요
             </span>
           )}
         </div>
@@ -148,20 +151,52 @@ export default function AIAssistant({
         )}
       </div>
 
-      {/* 오프라인 상태 */}
+      {/* API 키 미설정 — 바로 입력 가능 */}
       {!isOnline && (
-        <div className="p-6 text-center">
-          <WifiOff className="w-12 h-12 mx-auto mb-3 text-zinc-600" />
-          <p className="text-zinc-400 mb-2">Ollama가 실행되지 않고 있습니다</p>
-          <p className="text-sm text-zinc-500 mb-4">
-            터미널에서 <code className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-300">ollama serve</code> 명령어를 실행하세요
+        <div className="p-4">
+          <p className="text-sm text-zinc-400 mb-3">Claude API 키를 입력하면 AI 기능을 사용할 수 있습니다.</p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => { setApiKeyInput(e.target.value); setKeyError(null); }}
+              placeholder="sk-ant-..."
+              className="flex-1 h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white placeholder:text-zinc-500 outline-none focus:border-purple-500"
+            />
+            <button
+              onClick={async () => {
+                if (!apiKeyInput.trim()) return;
+                setSavingKey(true);
+                setKeyError(null);
+                try {
+                  const res = await fetch('/api/ai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'saveApiKey', apiKey: apiKeyInput.trim() }),
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    setApiKeyInput('');
+                    checkStatus();
+                  } else {
+                    setKeyError(data.error || '저장 실패');
+                  }
+                } catch {
+                  setKeyError('저장 실패');
+                } finally {
+                  setSavingKey(false);
+                }
+              }}
+              disabled={savingKey || !apiKeyInput.trim()}
+              className="h-9 px-4 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg text-sm text-white transition-colors"
+            >
+              {savingKey ? '확인 중...' : '연결'}
+            </button>
+          </div>
+          {keyError && <p className="text-xs text-red-400 mt-2">{keyError}</p>}
+          <p className="text-xs text-zinc-500 mt-2">
+            키는 암호화되어 로컬에만 저장됩니다.
           </p>
-          <button
-            onClick={checkStatus}
-            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors"
-          >
-            다시 확인
-          </button>
         </div>
       )}
 

@@ -1,68 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getSetting, setSetting } from '@/lib/database';
+import { encrypt, decrypt } from '@/lib/crypto';
 
-const OLLAMA_BASE_URL = 'http://localhost:11434';
-const DEFAULT_MODEL = 'llama3.2';
+const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 
-interface OllamaResponse {
-  model: string;
-  created_at: string;
-  response: string;
-  done: boolean;
-}
-
-// Ollama 서버 상태 확인
-async function checkOllamaStatus(): Promise<boolean> {
-  try {
-    const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
-      method: 'GET',
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-// 사용 가능한 모델 목록
-async function getAvailableModels(): Promise<string[]> {
-  try {
-    const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
-    const data = await res.json();
-    return data.models?.map((m: { name: string }) => m.name) || [];
-  } catch {
-    return [];
-  }
-}
-
-// Ollama에 프롬프트 전송
-async function generateCompletion(
+// Claude API 호출
+async function callClaude(
   prompt: string,
-  model: string = DEFAULT_MODEL,
-  system?: string
+  system: string,
+  apiKey: string,
+  model: string = DEFAULT_MODEL
 ): Promise<string> {
-  const res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
     body: JSON.stringify({
       model,
-      prompt,
+      max_tokens: 4096,
       system,
-      stream: false,
-      options: {
-        temperature: 0.7,
-        top_p: 0.9,
-        num_predict: 2048,
-      },
+      messages: [{ role: 'user', content: prompt }],
     }),
   });
 
   if (!res.ok) {
-    throw new Error(`Ollama API error: ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Claude API error: ${res.status}`);
   }
 
-  const data: OllamaResponse = await res.json();
-  return data.response;
+  const data = await res.json();
+  return data.content?.[0]?.text || '';
+}
+
+// API 키 가져오기
+function getApiKey(): string | null {
+  const encrypted = getSetting('claude_api_key');
+  if (!encrypted) return null;
+  try {
+    return decrypt(encrypted);
+  } catch {
+    return null;
+  }
 }
 
 // 프로젝트 코드 읽기 (주요 파일만)
@@ -71,8 +54,8 @@ function readProjectCode(projectPath: string): string {
   const ignoreDirs = ['node_modules', '.git', '.next', 'dist', 'build', '.vercel'];
   let content = '';
   let fileCount = 0;
-  const maxFiles = 10;
-  const maxChars = 8000;
+  const maxFiles = 15;
+  const maxChars = 12000;
 
   function walkDir(dir: string) {
     if (fileCount >= maxFiles || content.length >= maxChars) return;
@@ -94,8 +77,8 @@ function readProjectCode(projectPath: string): string {
             const fileContent = fs.readFileSync(fullPath, 'utf-8');
             const relativePath = path.relative(projectPath, fullPath);
             content += `\n--- ${relativePath} ---\n`;
-            content += fileContent.slice(0, 1500);
-            if (fileContent.length > 1500) content += '\n... (truncated)';
+            content += fileContent.slice(0, 2000);
+            if (fileContent.length > 2000) content += '\n... (truncated)';
             content += '\n';
             fileCount++;
           }
@@ -114,7 +97,6 @@ function readProjectCode(projectPath: string): string {
 function analyzeProject(projectPath: string): Record<string, unknown> {
   const info: Record<string, unknown> = { path: projectPath };
 
-  // package.json 읽기
   const pkgPath = path.join(projectPath, 'package.json');
   if (fs.existsSync(pkgPath)) {
     try {
@@ -129,9 +111,7 @@ function analyzeProject(projectPath: string): Record<string, unknown> {
     }
   }
 
-  // README 존재 여부
   info.hasReadme = fs.existsSync(path.join(projectPath, 'README.md'));
-
   return info;
 }
 
@@ -139,14 +119,15 @@ export async function GET(request: NextRequest) {
   const action = request.nextUrl.searchParams.get('action');
 
   switch (action) {
-    case 'status':
-      const isOnline = await checkOllamaStatus();
-      const models = isOnline ? await getAvailableModels() : [];
+    case 'status': {
+      const apiKey = getApiKey();
       return NextResponse.json({
-        online: isOnline,
-        models,
+        online: !!apiKey,
+        provider: 'claude',
+        models: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
         defaultModel: DEFAULT_MODEL,
       });
+    }
 
     default:
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
@@ -156,38 +137,78 @@ export async function GET(request: NextRequest) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { action, projectPath, model = DEFAULT_MODEL } = body;
+    const { action, projectPath, model } = body;
 
-    // Ollama 상태 확인
-    const isOnline = await checkOllamaStatus();
-    if (!isOnline) {
+    // API 키 저장/삭제 액션
+    if (action === 'saveApiKey') {
+      const { apiKey } = body;
+      if (!apiKey) return NextResponse.json({ error: 'API 키가 필요합니다' }, { status: 400 });
+
+      // Claude API로 키 유효성 검증
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 10,
+            messages: [{ role: 'user', content: 'Hi' }],
+          }),
+        });
+        if (!res.ok) {
+          return NextResponse.json({ error: '유효하지 않은 API 키입니다' }, { status: 400 });
+        }
+      } catch {
+        return NextResponse.json({ error: 'Claude API에 연결할 수 없습니다' }, { status: 503 });
+      }
+
+      setSetting('claude_api_key', encrypt(apiKey));
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === 'deleteApiKey') {
+      const { deleteSetting } = await import('@/lib/database');
+      deleteSetting('claude_api_key');
+      return NextResponse.json({ success: true });
+    }
+
+    // AI 기능 실행
+    const apiKey = getApiKey();
+    if (!apiKey) {
       return NextResponse.json(
-        { error: 'Ollama is not running. Start it with: ollama serve' },
-        { status: 503 }
+        { error: 'Claude API 키가 설정되지 않았습니다. 설정에서 API 키를 입력하세요.' },
+        { status: 401 }
       );
     }
+
+    const selectedModel = model || DEFAULT_MODEL;
 
     switch (action) {
       case 'summarize': {
         const code = readProjectCode(projectPath);
         const projectInfo = analyzeProject(projectPath);
 
-        const prompt = `Analyze this project and provide a brief summary in Korean:
+        const prompt = `이 프로젝트를 분석해주세요:
 
-Project Info:
+프로젝트 정보:
 ${JSON.stringify(projectInfo, null, 2)}
 
-Code samples:
+코드 샘플:
 ${code}
 
-Provide:
+다음을 한국어로 작성해주세요:
 1. 프로젝트 요약 (2-3 문장)
 2. 주요 기능
 3. 사용된 기술 스택
 4. 프로젝트 구조 특징`;
 
-        const summary = await generateCompletion(prompt, model,
-          'You are a helpful code analyst. Always respond in Korean. Be concise and practical.');
+        const summary = await callClaude(prompt,
+          '당신은 코드 분석 전문가입니다. 항상 한국어로 응답하세요. 간결하고 실용적으로 답하세요.',
+          apiKey, selectedModel);
 
         return NextResponse.json({ success: true, summary });
       }
@@ -197,35 +218,33 @@ Provide:
         const projectInfo = analyzeProject(projectPath);
         const projectName = path.basename(projectPath);
 
-        const prompt = `Generate a README.md file in Korean for this project:
+        const prompt = `이 프로젝트의 README.md를 한국어로 생성해주세요:
 
-Project Name: ${projectName}
-Project Info:
+프로젝트 이름: ${projectName}
+프로젝트 정보:
 ${JSON.stringify(projectInfo, null, 2)}
 
-Code samples:
+코드 샘플:
 ${code}
 
-Generate a professional README.md with these sections:
+다음 섹션을 포함한 마크다운을 생성하세요:
 1. # 프로젝트 이름
 2. ## 소개
 3. ## 주요 기능
 4. ## 기술 스택
 5. ## 설치 방법
 6. ## 사용법
-7. ## 프로젝트 구조
+7. ## 프로젝트 구조`;
 
-Use markdown formatting. Be practical and helpful.`;
-
-        const readme = await generateCompletion(prompt, model,
-          'You are a technical writer. Generate clean, professional README files in Korean. Use proper markdown syntax.');
+        const readme = await callClaude(prompt,
+          '당신은 기술 문서 작가입니다. 깔끔하고 전문적인 README를 한국어로 작성하세요. 마크다운 문법을 올바르게 사용하세요.',
+          apiKey, selectedModel);
 
         return NextResponse.json({ success: true, readme });
       }
 
       case 'explainCode': {
         const { filePath, lineStart, lineEnd } = body;
-
         if (!filePath || !fs.existsSync(filePath)) {
           return NextResponse.json({ error: 'File not found' }, { status: 404 });
         }
@@ -234,20 +253,21 @@ Use markdown formatting. Be practical and helpful.`;
         const lines = fileContent.split('\n');
         const codeSlice = lines.slice(lineStart - 1, lineEnd || lineStart + 20).join('\n');
 
-        const prompt = `Explain this code in Korean:
+        const prompt = `이 코드를 한국어로 설명해주세요:
 
-File: ${path.basename(filePath)}
+파일: ${path.basename(filePath)}
 \`\`\`
 ${codeSlice}
 \`\`\`
 
-Explain:
+설명:
 1. 이 코드가 하는 일
 2. 주요 로직 설명
 3. 개선 가능한 점 (있다면)`;
 
-        const explanation = await generateCompletion(prompt, model,
-          'You are a code teacher. Explain code clearly in Korean. Be concise and educational.');
+        const explanation = await callClaude(prompt,
+          '당신은 코드 교사입니다. 코드를 명확하게 한국어로 설명하세요. 간결하고 교육적으로.',
+          apiKey, selectedModel);
 
         return NextResponse.json({ success: true, explanation });
       }
@@ -256,24 +276,25 @@ Explain:
         const code = readProjectCode(projectPath);
         const projectInfo = analyzeProject(projectPath);
 
-        const prompt = `Review this project and suggest improvements in Korean:
+        const prompt = `이 프로젝트를 리뷰하고 개선점을 한국어로 제안해주세요:
 
-Project Info:
+프로젝트 정보:
 ${JSON.stringify(projectInfo, null, 2)}
 
-Code samples:
+코드 샘플:
 ${code}
 
-Provide:
+제안사항:
 1. 코드 품질 개선점 (3-5개)
 2. 구조적 개선 제안
 3. 성능 최적화 팁
 4. 보안 고려사항
 
-Be practical and specific.`;
+구체적이고 실용적으로 작성하세요.`;
 
-        const suggestions = await generateCompletion(prompt, model,
-          'You are a senior code reviewer. Provide constructive feedback in Korean. Be specific and helpful.');
+        const suggestions = await callClaude(prompt,
+          '당신은 시니어 코드 리뷰어입니다. 건설적인 피드백을 한국어로 제공하세요. 구체적이고 도움이 되게.',
+          apiKey, selectedModel);
 
         return NextResponse.json({ success: true, suggestions });
       }
@@ -284,7 +305,7 @@ Be practical and specific.`;
   } catch (error) {
     console.error('AI API error:', error);
     return NextResponse.json(
-      { error: 'AI operation failed', details: String(error) },
+      { error: 'AI 작업 실패', details: String(error) },
       { status: 500 }
     );
   }

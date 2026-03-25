@@ -173,7 +173,7 @@ export function CommandPalette({
                     >
                       <FileText className="w-4 h-4 text-purple-400" />
                       <span>프로젝트 요약 (AI)</span>
-                      <span className="ml-auto text-xs text-purple-400/60">Ollama</span>
+                      <span className="ml-auto text-xs text-purple-400/60">Claude</span>
                     </Command.Item>
                     <Command.Item
                       onSelect={() => {
@@ -184,7 +184,7 @@ export function CommandPalette({
                     >
                       <Sparkles className="w-4 h-4 text-purple-400" />
                       <span>README 자동 생성 (AI)</span>
-                      <span className="ml-auto text-xs text-purple-400/60">Ollama</span>
+                      <span className="ml-auto text-xs text-purple-400/60">Claude</span>
                     </Command.Item>
                     <Command.Item
                       onSelect={() => {
@@ -195,7 +195,7 @@ export function CommandPalette({
                     >
                       <Lightbulb className="w-4 h-4 text-purple-400" />
                       <span>개선점 제안 (AI)</span>
-                      <span className="ml-auto text-xs text-purple-400/60">Ollama</span>
+                      <span className="ml-auto text-xs text-purple-400/60">Claude</span>
                     </Command.Item>
                   </Command.Group>
                 )}

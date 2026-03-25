@@ -13,7 +13,7 @@ export function useAI() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Ollama 상태 확인
+  // Claude API 상태 확인
   const checkStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/ai?action=status');
