@@ -30,13 +30,9 @@ function getLocalGitHubMappings(): Record<string, string> {
           const fullName = `${match[1]}/${match[2]}`;
           mappings[fullName.toLowerCase()] = fullPath;
         }
-      } catch {
-        // ignore repos without origin remote
-      }
+      } catch { /* origin remote 없는 레포 — 무시 */ }
     }
-  } catch {
-    // ignore errors reading desktop
-  }
+  } catch { /* Desktop 디렉토리 읽기 실패 — 무시 */ }
 
   return mappings;
 }
@@ -53,7 +49,7 @@ export async function GET(request: Request) {
     let token: string;
     try {
       token = decrypt(encryptedToken);
-    } catch {
+    } catch { /* 토큰 복호화 실패 */
       return NextResponse.json({ error: 'Token invalid' }, { status: 401 });
     }
 

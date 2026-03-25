@@ -70,7 +70,7 @@ function getFileTree(dirPath: string, maxDepth = 3, currentDepth = 0): FileNode[
             extension: ext,
           });
         }
-      } catch {}
+      } catch { /* 개별 파일 stat 실패 — 건너뜀 */ }
     }
 
     // Sort: folders first, then files, both alphabetically
@@ -80,7 +80,8 @@ function getFileTree(dirPath: string, maxDepth = 3, currentDepth = 0): FileNode[
     });
 
     return nodes;
-  } catch {
+  } catch (error) {
+    console.warn('파일 트리 읽기 실패:', error);
     return [];
   }
 }

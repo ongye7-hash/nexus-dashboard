@@ -80,7 +80,8 @@ export function VPSSettings({ open, onClose }: VPSSettingsProps) {
       const res = await fetch('/api/vps');
       const data = await res.json();
       setServers(data.servers || []);
-    } catch {
+    } catch (error) {
+      console.warn('VPS 서버 목록 로드 실패:', error);
       setError('서버 목록을 불러올 수 없습니다');
     } finally {
       setLoading(false);
@@ -145,7 +146,8 @@ export function VPSSettings({ open, onClose }: VPSSettingsProps) {
           prev.map((s) => (s.id === server.id ? { ...s, online: true } : s))
         );
       }
-    } catch {
+    } catch (error) {
+      console.warn('VPS 연결 테스트 실패:', error);
       setTestResult({ id: targetId, success: false, message: '연결 테스트에 실패했습니다' });
     } finally {
       setTesting(null);
@@ -184,7 +186,8 @@ export function VPSSettings({ open, onClose }: VPSSettingsProps) {
       }
       resetForm();
       await fetchServers();
-    } catch {
+    } catch (error) {
+      console.warn('VPS 서버 저장 실패:', error);
       setError('저장에 실패했습니다');
     } finally {
       setSaving(false);
@@ -201,7 +204,8 @@ export function VPSSettings({ open, onClose }: VPSSettingsProps) {
       if (res.ok) {
         setServers((prev) => prev.filter((s) => s.id !== id));
       }
-    } catch {
+    } catch (error) {
+      console.warn('VPS 서버 삭제 실패:', error);
       setError('삭제에 실패했습니다');
     }
   };

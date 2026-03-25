@@ -28,7 +28,7 @@ export function useAI() {
       const data = await res.json();
       setStatus(data);
       return data;
-    } catch {
+    } catch { /* AI 상태 확인 실패 — 오프라인 처리 */
       setStatus({ online: false, provider: 'claude', models: [], defaultModel: '' });
       return null;
     }

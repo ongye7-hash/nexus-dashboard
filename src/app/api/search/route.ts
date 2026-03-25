@@ -94,8 +94,7 @@ export async function POST(request: Request) {
           searchOutput = execFileSync('rg', rgArgs,
             { encoding: 'utf-8', timeout: 10000, maxBuffer: 5 * 1024 * 1024, windowsHide: true }
           );
-        } catch {
-          // ripgrep 없으면 findstr 사용 (Windows)
+        } catch { /* ripgrep 없으면 findstr로 폴백 */
           const findstrArgs = [
             ...(caseSensitive ? ['/N'] : ['/N', '/I']),
             '/S', '/P',
@@ -106,8 +105,7 @@ export async function POST(request: Request) {
             searchOutput = execFileSync('findstr', findstrArgs,
               { encoding: 'utf-8', timeout: 15000, maxBuffer: 5 * 1024 * 1024, windowsHide: true }
             );
-          } catch {
-            // 검색 결과 없음 또는 에러
+          } catch { /* 검색 결과 없음 또는 에러 */
             continue;
           }
         }

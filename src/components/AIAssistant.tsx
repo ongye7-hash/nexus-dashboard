@@ -141,7 +141,8 @@ export default function AIAssistant({
       } else {
         setSaveMessage('저장에 실패했습니다');
       }
-    } catch {
+    } catch (error) {
+      console.warn('README 저장 실패:', error);
       setSaveMessage('저장에 실패했습니다');
     } finally {
       setSaving(false);
@@ -166,8 +167,7 @@ export default function AIAssistant({
         // 단일 명령으로 Claude Code에 리뷰 파일을 전달
         onOpenTerminal(`type "${reviewPath.replace(/\//g, '\\')}" | claude`);
       }
-    } catch {
-      // fallback: 클립보드 복사 안내
+    } catch { /* 리뷰 파일 저장 실패 — 클립보드 복사로 폴백 */
       navigator.clipboard.writeText(result);
       onOpenTerminal('claude');
       setSaveMessage('리뷰 내용이 클립보드에 복사되었습니다. Claude Code에서 붙여넣기하세요.');
@@ -272,7 +272,8 @@ export default function AIAssistant({
                   } else {
                     setKeyError(data.error || '저장 실패');
                   }
-                } catch {
+                } catch (error) {
+                  console.warn('API 키 저장 실패:', error);
                   setKeyError('저장 실패');
                 } finally {
                   setSavingKey(false);

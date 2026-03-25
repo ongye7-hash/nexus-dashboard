@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { validateProjectPath } from '@/lib/path-validator';
@@ -39,15 +39,15 @@ interface GitInfo {
   behind?: number;
 }
 
-function execGit(projectPath: string, command: string): string | null {
+function execGit(projectPath: string, ...args: string[]): string | null {
   try {
-    return execSync(`git ${command}`, {
+    return execFileSync('git', args, {
       cwd: projectPath,
       encoding: 'utf-8',
       timeout: 5000,
       windowsHide: true,
-    }).trim();
-  } catch {
+    }).toString().trim();
+  } catch { /* git 명령 실패 — null 반환 */
     return null;
   }
 }
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
   const info: GitInfo = { isGitRepo: true };
 
   // Current branch
-  const branch = execGit(safePath, 'rev-parse --abbrev-ref HEAD');
+  const branch = execGit(safePath, 'rev-parse', '--abbrev-ref', 'HEAD');
   if (branch) {
     info.currentBranch = branch;
   }
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
   // Recent commits (last 10)
   const logOutput = execGit(
     safePath,
-    'log --oneline -10 --format="%H|%h|%s|%an|%aI"'
+    'log', '--oneline', '-10', '--format=%H|%h|%s|%an|%aI'
   );
   if (logOutput) {
     info.commits = logOutput.split('\n').filter(Boolean).map((line) => {
@@ -117,7 +117,7 @@ export async function GET(request: Request) {
   }
 
   // Branches
-  const branchOutput = execGit(safePath, 'branch -a');
+  const branchOutput = execGit(safePath, 'branch', '-a');
   if (branchOutput) {
     info.branches = branchOutput.split('\n').filter(Boolean).map((line) => {
       const isCurrent = line.startsWith('*');
@@ -128,7 +128,7 @@ export async function GET(request: Request) {
   }
 
   // Status
-  const statusOutput = execGit(safePath, 'status --porcelain');
+  const statusOutput = execGit(safePath, 'status', '--porcelain');
   if (statusOutput !== null) {
     const status: GitStatus = {
       modified: [],
@@ -162,7 +162,7 @@ export async function GET(request: Request) {
   }
 
   // Remote URL
-  const remoteUrl = execGit(safePath, 'remote get-url origin');
+  const remoteUrl = execGit(safePath, 'remote', 'get-url', 'origin');
   if (remoteUrl) {
     info.remoteUrl = remoteUrl;
     info.hasRemote = true;
@@ -170,7 +170,7 @@ export async function GET(request: Request) {
     // Ahead/behind
     const aheadBehind = execGit(
       safePath,
-      `rev-list --left-right --count ${branch}...origin/${branch}`
+      'rev-list', '--left-right', '--count', `${branch}...origin/${branch}`
     );
     if (aheadBehind) {
       const [ahead, behind] = aheadBehind.split('\t').map(Number);
@@ -198,13 +198,12 @@ export async function POST(request: Request) {
       case 'commit': {
         if (!message) return NextResponse.json({ error: 'Commit message required' }, { status: 400 });
         // Stage all changes
-        const addResult = execGit(safePath, 'add -A');
+        const addResult = execGit(safePath, 'add', '-A');
         if (addResult === null) {
           return NextResponse.json({ error: 'Failed to stage changes' }, { status: 500 });
         }
-        // Commit - use execFileSync to prevent command injection
+        // Commit
         try {
-          const { execFileSync } = require('child_process');
           execFileSync('git', ['commit', '-m', message], {
             cwd: safePath,
             encoding: 'utf-8',
@@ -225,9 +224,9 @@ export async function POST(request: Request) {
         const result = execGit(safePath, 'push');
         if (result === null) {
           // Try with setting upstream
-          const branch = execGit(safePath, 'rev-parse --abbrev-ref HEAD');
+          const branch = execGit(safePath, 'rev-parse', '--abbrev-ref', 'HEAD');
           if (branch) {
-            const pushResult = execGit(safePath, `push -u origin ${branch}`);
+            const pushResult = execGit(safePath, 'push', '-u', 'origin', branch);
             if (pushResult === null) {
               return NextResponse.json({ error: 'Push failed' }, { status: 500 });
             }

@@ -41,7 +41,8 @@ export function TmuxPanel({ serverId, serverName, onAttach, onNewSession }: Tmux
         return;
       }
       setSessions(data.tmuxSessions || []);
-    } catch {
+    } catch (error) {
+      console.warn('Tmux 세션 로드 실패:', error);
       setError('서버에 연결할 수 없습니다');
     } finally {
       setLoading(false);

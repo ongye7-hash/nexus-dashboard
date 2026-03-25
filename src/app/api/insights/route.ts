@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getWeeklyReport, getRecentSessions, getAllTodosCount, getStreak } from '@/lib/database';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -25,15 +25,15 @@ export async function GET() {
         if (!fs.existsSync(gitDir)) continue;
 
         try {
-          const status = execSync('git status --porcelain', { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).trim();
+          const status = execFileSync('git', ['status', '--porcelain'], { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).toString().trim();
           if (status) {
             const changeCount = status.split('\n').filter(Boolean).length;
 
             // Check last commit date
             let lastCommitDate = '';
             try {
-              lastCommitDate = execSync('git log -1 --format=%aI', { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).trim();
-            } catch {}
+              lastCommitDate = execFileSync('git', ['log', '-1', '--format=%aI'], { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).toString().trim();
+            } catch { /* 커밋 이력 없는 레포 — 무시 */ }
 
             if (lastCommitDate) {
               const daysSinceCommit = Math.floor((Date.now() - new Date(lastCommitDate).getTime()) / 86400000);
@@ -50,8 +50,8 @@ export async function GET() {
 
           // Check unpushed commits
           try {
-            const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).trim();
-            const aheadBehind = execSync(`git rev-list --left-right --count ${branch}...origin/${branch}`, { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).trim();
+            const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).toString().trim();
+            const aheadBehind = execFileSync('git', ['rev-list', '--left-right', '--count', `${branch}...origin/${branch}`], { cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true }).toString().trim();
             const [ahead] = aheadBehind.split('\t').map(Number);
             if (ahead > 0) {
               alerts.push({
@@ -61,10 +61,10 @@ export async function GET() {
                 severity: ahead > 5 ? 'warning' : 'info',
               });
             }
-          } catch {}
-        } catch {}
+          } catch { /* remote 없는 레포 — unpushed 체크 불가 */ }
+        } catch { /* git status 실패 — 건너뜀 */ }
       }
-    } catch {}
+    } catch { /* Desktop 디렉토리 읽기 실패 — 무시 */ }
 
     // Streak warning
     if (streak.current > 0) {

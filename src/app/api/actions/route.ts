@@ -28,9 +28,7 @@ function detectPortFromPackageJson(projectPath: string): number {
         return parseInt(envPortMatch[1], 10);
       }
     }
-  } catch {
-    // ignore
-  }
+  } catch { /* package.json 읽기 실패 — 기본 포트 사용 */ }
 
   return 3000; // 기본 포트
 }
@@ -66,8 +64,7 @@ export async function POST(request: Request) {
         try {
           // Windows Terminal 시도
           await execFileAsync('wt', ['-d', safePath]);
-        } catch {
-          // 실패하면 cmd로 열기
+        } catch { /* Windows Terminal 없으면 cmd로 폴백 */
           await execFileAsync('cmd', ['/c', 'start', 'cmd', '/k', `cd /d "${safePath}"`]);
         }
         return NextResponse.json({ success: true, message: '터미널을 열었습니다' });
@@ -79,7 +76,7 @@ export async function POST(request: Request) {
 
         try {
           await execFileAsync('wt', ['-d', safePath, 'cmd', '/k', 'npm run dev']);
-        } catch {
+        } catch { /* Windows Terminal 없으면 cmd로 폴백 */
           await execFileAsync('cmd', ['/c', 'start', 'cmd', '/k', `cd /d "${safePath}" && npm run dev`]);
         }
         return NextResponse.json({ success: true, message: '프로젝트를 실행했습니다', port });

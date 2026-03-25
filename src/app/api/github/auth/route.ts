@@ -11,7 +11,7 @@ export async function GET() {
     let token: string;
     try {
       token = decrypt(encryptedToken);
-    } catch {
+    } catch { /* 토큰 복호화 실패 */
       return NextResponse.json({ authenticated: false, error: 'Token decrypt failed' });
     }
 

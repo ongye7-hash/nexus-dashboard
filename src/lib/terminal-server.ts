@@ -104,7 +104,7 @@ function createServer() {
       const { validateProjectPath } = require('./path-validator');
       const validation = validateProjectPath(cwd);
       safeCwd = validation.isValid && validation.sanitizedPath ? validation.sanitizedPath : safeCwd;
-    } catch {
+    } catch { /* path-validator 로드 실패 — 기본 경로 검증으로 폴백 */
       safeCwd = fs.existsSync(cwd) ? cwd : safeCwd;
     }
 
@@ -155,8 +155,7 @@ function createServer() {
             ptyProcess.write(message.data + '\r');
             break;
         }
-      } catch {
-        // Raw input fallback
+      } catch { /* JSON 파싱 실패 — raw input 폴백 */
         ptyProcess.write(msg.toString());
       }
     });
@@ -297,7 +296,7 @@ async function handleSSHConnection(ws: WebSocket, serverId: string, url: URL, se
                 stream.write(message.data + '\n');
                 break;
             }
-          } catch {
+          } catch { /* JSON 파싱 실패 — raw input 폴백 */
             stream.write(msg.toString());
           }
         });

@@ -16,7 +16,8 @@ export async function GET() {
       token,
       status: token ? 'available' : 'unavailable',
     });
-  } catch {
+  } catch (error) {
+    console.warn('터미널 토큰 읽기 실패:', error);
     return NextResponse.json({
       wsUrl: 'ws://localhost:8508',
       token: null,

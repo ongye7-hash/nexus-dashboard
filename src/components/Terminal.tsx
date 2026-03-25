@@ -93,7 +93,8 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
         setError('터미널 서버가 아직 준비되지 않았습니다');
         return;
       }
-    } catch {
+    } catch (error) {
+      console.warn('터미널 서버 연결 실패:', error);
       setError('터미널 서버에 연결할 수 없습니다');
       return;
     }
@@ -132,8 +133,7 @@ export default function TerminalEmbed({ cwd, autoCommand, onClose, className = '
             setConnected(false);
             break;
         }
-      } catch {
-        // Raw data
+      } catch { /* JSON 파싱 실패 — raw data 폴백 */
         term.write(event.data);
       }
     };

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
 import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos } from '@/lib/database';
@@ -62,7 +63,7 @@ function detectDeployUrl(dirPath: string): string | undefined {
           if (pkg.homepage) return pkg.homepage;
         }
       }
-    } catch {}
+    } catch { /* Vercel 프로젝트 설정 파싱 실패 — 무시 */ }
   }
 
   // Check package.json homepage field
@@ -71,7 +72,7 @@ function detectDeployUrl(dirPath: string): string | undefined {
     try {
       const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
       if (pkg.homepage) return pkg.homepage;
-    } catch {}
+    } catch { /* package.json 파싱 실패 — 무시 */ }
   }
 
   // Check for common deployment indicator files
@@ -86,7 +87,7 @@ function detectDeployUrl(dirPath: string): string | undefined {
       if (vercelJson.name) {
         return `https://${vercelJson.name}.vercel.app`;
       }
-    } catch {}
+    } catch { /* vercel.json 파싱 실패 — 무시 */ }
   }
 
   return undefined;
@@ -101,7 +102,7 @@ function detectProjectType(dirPath: string): { type: ProjectType; framework?: st
   const readJson = (name: string) => {
     try {
       return JSON.parse(fs.readFileSync(path.join(dirPath, name), 'utf-8'));
-    } catch {
+    } catch { /* JSON 파싱 실패 */
       return null;
     }
   };
@@ -156,7 +157,7 @@ function detectProjectType(dirPath: string): { type: ProjectType; framework?: st
       const html = fs.readFileSync(path.join(dirPath, 'index.html'), 'utf-8');
       if (html.includes('tailwindcss') || html.includes('tailwind')) techStack.push('Tailwind');
       if (html.includes('alpine')) techStack.push('Alpine.js');
-    } catch {}
+    } catch { /* index.html 읽기 실패 — 무시 */ }
   }
 
   return { type, framework, techStack };
@@ -209,9 +210,9 @@ function getDirectorySize(dirPath: string, maxDepth = 2): { size: number; fileCo
           } else if (stat.isDirectory()) {
             walk(fullPath, depth + 1);
           }
-        } catch {}
+        } catch { /* 개별 파일 stat 실패 — 건너뜀 */ }
       }
-    } catch {}
+    } catch { /* 디렉토리 읽기 실패 — 건너뜀 */ }
   }
 
   walk(dirPath, 0);
@@ -237,22 +238,29 @@ export async function GET() {
         if (!stat.isDirectory()) continue;
         if (IGNORED_FOLDERS.includes(item)) continue;
 
+        // Read directory listing once and use Set for O(1) lookups
+        const dirContents = new Set<string>();
+        try {
+          const dirItems = fs.readdirSync(fullPath);
+          dirItems.forEach(di => dirContents.add(di));
+        } catch { /* 디렉토리 읽기 실패 — 무시 */ }
+
         const { type, framework, techStack } = detectProjectType(fullPath);
-        const hasPackageJson = fs.existsSync(path.join(fullPath, 'package.json'));
-        const hasGit = fs.existsSync(path.join(fullPath, '.git'));
-        const hasVercel = fs.existsSync(path.join(fullPath, '.vercel'));
+        const hasPackageJson = dirContents.has('package.json');
+        const hasGit = dirContents.has('.git');
+        const hasVercel = dirContents.has('.vercel');
 
         // 개발 프로젝트 식별: 아래 중 하나라도 있어야 프로젝트로 인정
         const isProject = hasPackageJson || hasGit || hasVercel
-          || fs.existsSync(path.join(fullPath, 'requirements.txt'))
-          || fs.existsSync(path.join(fullPath, 'pyproject.toml'))
-          || fs.existsSync(path.join(fullPath, 'setup.py'))
-          || fs.existsSync(path.join(fullPath, 'index.html'))
-          || fs.existsSync(path.join(fullPath, 'Cargo.toml'))
-          || fs.existsSync(path.join(fullPath, 'go.mod'))
-          || fs.existsSync(path.join(fullPath, 'pom.xml'))
-          || fs.existsSync(path.join(fullPath, 'build.gradle'))
-          || fs.existsSync(path.join(fullPath, '.gitignore'));
+          || dirContents.has('requirements.txt')
+          || dirContents.has('pyproject.toml')
+          || dirContents.has('setup.py')
+          || dirContents.has('index.html')
+          || dirContents.has('Cargo.toml')
+          || dirContents.has('go.mod')
+          || dirContents.has('pom.xml')
+          || dirContents.has('build.gradle')
+          || dirContents.has('.gitignore');
 
         if (!isProject) continue;
 
@@ -267,7 +275,9 @@ export async function GET() {
           status = 'active';
         }
 
-        const { size, fileCount } = getDirectorySize(fullPath);
+        // Skip expensive directory walk during scan; fetch on-demand if needed
+        const size = 0;
+        const fileCount = 0;
 
         // Auto-detect deploy URL if not manually set
         const autoDetectedUrl = detectDeployUrl(fullPath);
@@ -279,18 +289,18 @@ export async function GET() {
         if (hasGit) {
           try {
             const remoteUrl = execSync('git remote get-url origin', {
-              cwd: fullPath, encoding: 'utf-8', timeout: 3000, windowsHide: true,
+              cwd: fullPath, encoding: 'utf-8', timeout: 1000, windowsHide: true,
             }).trim();
             const ghMatch = remoteUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
             if (ghMatch) {
               githubFullName = `${ghMatch[1]}/${ghMatch[2]}`;
               githubUrl = `https://github.com/${githubFullName}`;
             }
-          } catch {}
+          } catch { /* git remote 조회 실패 — 무시 */ }
         }
 
         const project: Project = {
-          id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${projects.length}`,
+          id: `proj-${crypto.createHash('md5').update(fullPath).digest('hex').slice(0, 12)}`,
           name: item,
           path: fullPath,
           type,
@@ -354,7 +364,9 @@ export async function GET() {
           pinned: false,
         });
       }
-    } catch {}
+    } catch (error) {
+      console.warn('GitHub 레포 목록 로드 실패:', error);
+    }
 
     // Sort: pinned first, then by last modified
     projects.sort((a, b) => {

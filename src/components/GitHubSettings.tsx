@@ -71,7 +71,8 @@ export function GitHubSettings({ open, onClose }: GitHubSettingsProps) {
       const res = await fetch('/api/github/auth');
       const data = await res.json();
       setAuthStatus(data);
-    } catch {
+    } catch (error) {
+      console.warn('GitHub 인증 상태 확인 실패:', error);
       setError('인증 상태를 확인할 수 없습니다');
     } finally {
       setLoading(false);
@@ -96,7 +97,8 @@ export function GitHubSettings({ open, onClose }: GitHubSettingsProps) {
       setSaveSuccess(true);
       setToken('');
       await fetchAuthStatus();
-    } catch {
+    } catch (error) {
+      console.warn('GitHub 토큰 저장 실패:', error);
       setError('토큰 저장에 실패했습니다');
     } finally {
       setSaving(false);
@@ -114,7 +116,8 @@ export function GitHubSettings({ open, onClose }: GitHubSettingsProps) {
         return;
       }
       await fetchAuthStatus();
-    } catch {
+    } catch (error) {
+      console.warn('GitHub 동기화 실패:', error);
       setError('동기화에 실패했습니다');
     } finally {
       setSyncing(false);
@@ -141,7 +144,8 @@ export function GitHubSettings({ open, onClose }: GitHubSettingsProps) {
       }
       setAuthStatus({ authenticated: false });
       setConfirmDisconnect(false);
-    } catch {
+    } catch (error) {
+      console.warn('GitHub 연결 해제 실패:', error);
       setError('연결 해제에 실패했습니다');
     } finally {
       setLoading(false);

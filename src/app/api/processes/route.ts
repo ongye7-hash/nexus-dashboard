@@ -75,9 +75,7 @@ export async function GET() {
               if (taskParts[0]) {
                 processName = taskParts[0].replace(/"/g, '').trim();
               }
-            } catch {
-              // ignore
-            }
+            } catch { /* tasklist 조회 실패 — 무시 */ }
 
             // 포트 매핑에서 프로젝트 정보 가져오기
             const projectInfo = portToProject[port];
@@ -97,7 +95,7 @@ export async function GET() {
                   resolvedName = pathMatch[1];
                   resolvedPath = path.join('C:\\Users\\user\\Desktop', pathMatch[1]);
                 }
-              } catch {}
+              } catch { /* wmic 조회 실패 — 무시 */ }
 
               // 2차: 못 찾으면 HTTP 요청으로 페이지 타이틀 추출
               if (!resolvedName) {
@@ -114,7 +112,7 @@ export async function GET() {
                   if (titleMatch) {
                     resolvedName = titleMatch[1].trim();
                   }
-                } catch {}
+                } catch { /* HTTP 타이틀 추출 실패 — 무시 */ }
               }
             }
 

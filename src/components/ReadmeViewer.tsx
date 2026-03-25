@@ -29,7 +29,7 @@ export function ReadmeViewer({ projectPath }: ReadmeViewerProps) {
           setContent(data.content);
           setFilename(data.filename);
         }
-      } catch {
+      } catch { /* README 로드 실패 — 없는 것으로 처리 */
         setExists(false);
       } finally {
         setLoading(false);

@@ -131,7 +131,7 @@ export function MorningCodex({
           const res = await fetch(`/api/git?path=${encodeURIComponent(project.path)}`);
           const data = await res.json();
           results[project.id] = data;
-        } catch {
+        } catch { /* git 정보 로드 실패 — 비 git 레포로 처리 */
           results[project.id] = { isGitRepo: false };
         }
       })
@@ -145,7 +145,7 @@ export function MorningCodex({
       const res = await fetch('/api/processes');
       const data = await res.json();
       setRunningProcesses(data.processes || []);
-    } catch {
+    } catch { /* 프로세스 목록 로드 실패 — 빈 배열 처리 */
       setRunningProcesses([]);
     }
   }, []);
@@ -167,7 +167,7 @@ export function MorningCodex({
           ? { commits: yesterdayData.commit_count || 0, projects: yesterdayData.project_count || 0, minutes: yesterdayData.total_minutes || 0 }
           : { commits: 0, projects: 0, minutes: 0 });
       }
-    } catch { /* 조용히 실패 */ }
+    } catch { /* 통계 로드 실패 — 선택적 기능 */ }
   }, []);
 
   const fetchActiveSessions = useCallback(async () => {
@@ -176,7 +176,7 @@ export function MorningCodex({
       if (!res.ok) return;
       const data = await res.json();
       setActiveSessions(data.activeSessions || []);
-    } catch {
+    } catch { /* 활성 세션 로드 실패 — 빈 배열 처리 */
       setActiveSessions([]);
     }
   }, []);
@@ -256,7 +256,7 @@ export function MorningCodex({
     try {
       await fetch('/api/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'openVSCode', path: project.path }) });
       await fetch('/api/actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'runProject', path: project.path }) });
-      try { await fetch('/api/work-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', projectPath: project.path }) }); } catch { /* graceful */ }
+      try { await fetch('/api/work-sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', projectPath: project.path }) }); } catch { /* 작업 세션 시작 실패 — 선택적 기능 */ }
       setTimeout(fetchProcesses, 2000);
     } catch (error) {
       console.warn('Resume 실패:', error);
@@ -275,7 +275,7 @@ export function MorningCodex({
       } else {
         setQuickCommitMap(prev => ({ ...prev, [project.id]: { ...prev[project.id], aiLoading: false } }));
       }
-    } catch {
+    } catch { /* AI 커밋 메시지 생성 실패 — 무시 */
       setQuickCommitMap(prev => ({ ...prev, [project.id]: { ...prev[project.id], aiLoading: false } }));
     }
   };
@@ -313,7 +313,7 @@ export function MorningCodex({
       fetch('/api/stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'record', type: 'commit' }) }).catch(() => {});
       fetchGitInfo();
       setTimeout(() => { setExpandedCommit(null); setQuickCommitMap(prev => { const next = { ...prev }; delete next[project.id]; return next; }); }, 2000);
-    } catch {
+    } catch { /* 커밋/푸시 네트워크 오류 */
       setQuickCommitMap(prev => ({ ...prev, [project.id]: { ...prev[project.id], loading: false, result: { success: false, text: 'Network error' } } }));
     }
   };

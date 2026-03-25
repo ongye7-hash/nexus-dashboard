@@ -55,7 +55,7 @@ function getApiKey(): string | null {
   if (!encrypted) return null;
   try {
     return decrypt(encrypted);
-  } catch {
+  } catch { /* 복호화 실패 — API 키 무효 */
     return null;
   }
 }
@@ -133,8 +133,7 @@ function collectFiles(projectPath: string): FileEntry[] {
           files.push({ path: fullPath, relativePath, priority, size: stat.size });
         }
       }
-    } catch {
-      // ignore
+    } catch { /* 개별 파일/디렉토리 접근 실패 — 건너뜀 */
     }
   }
 
@@ -162,8 +161,7 @@ function readProjectCode(projectPath: string): string {
       if (fileContent.length > maxPerFile) content += '\n... (truncated)';
       content += '\n';
       fileCount++;
-    } catch {
-      // ignore
+    } catch { /* 개별 파일 읽기 실패 — 건너뜀 */
     }
   }
 
@@ -183,7 +181,7 @@ function analyzeProject(projectPath: string): Record<string, unknown> {
       info.dependencies = Object.keys(pkg.dependencies || {});
       info.devDependencies = Object.keys(pkg.devDependencies || {});
       info.scripts = Object.keys(pkg.scripts || {});
-    } catch {}
+    } catch { /* package.json 파싱 실패 — 무시 */ }
   }
 
   // README 내용 (있으면 처음 500자)
@@ -191,7 +189,7 @@ function analyzeProject(projectPath: string): Record<string, unknown> {
   if (fs.existsSync(readmePath)) {
     try {
       info.readme = fs.readFileSync(readmePath, 'utf-8').slice(0, 500);
-    } catch {}
+    } catch { /* README 읽기 실패 — 무시 */ }
   }
 
   // 파일 구조 요약
@@ -274,7 +272,8 @@ export async function POST(request: Request) {
         if (!res.ok) {
           return NextResponse.json({ error: '유효하지 않은 API 키입니다' }, { status: 400 });
         }
-      } catch {
+      } catch (error) {
+        console.warn('Claude API 연결 실패:', error);
         return NextResponse.json({ error: 'Claude API에 연결할 수 없습니다' }, { status: 503 });
       }
 

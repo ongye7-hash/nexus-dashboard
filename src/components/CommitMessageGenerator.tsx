@@ -64,9 +64,7 @@ export default function CommitMessageGenerator({
       await navigator.clipboard.writeText(message);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback
-    }
+    } catch { /* 클립보드 복사 실패 — 무시 */ }
   };
 
   return (

@@ -149,8 +149,8 @@ async function runAudit(projectPath: string, projectName: string): Promise<Audit
         }
 
         return result;
-      } catch {
-        // JSON 파싱 실패
+      } catch (error) {
+        console.warn('npm audit JSON 파싱 실패:', error);
       }
     }
 

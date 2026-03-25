@@ -62,8 +62,8 @@ export function useFileWatcher({
 
           // 콜백 호출
           onFileChange?.(data);
-        } catch {
-          console.error('Failed to parse file change event');
+        } catch (error) {
+          console.error('Failed to parse file change event:', error);
         }
       };
 

@@ -117,7 +117,8 @@ export function FileTree({ projectPath }: FileTreeProps) {
         } else {
           setError(data.error || '파일 트리를 불러올 수 없습니다');
         }
-      } catch {
+      } catch (error) {
+        console.warn('파일 트리 로드 실패:', error);
         setError('파일 트리를 불러올 수 없습니다');
       } finally {
         setLoading(false);

@@ -48,7 +48,7 @@ async function getGitStatus(projectPath: string): Promise<string> {
       timeout: GIT_TIMEOUT,
     });
     return stdout;
-  } catch {
+  } catch { /* git status 실패 — 빈 문자열 반환 */
     return '';
   }
 }
@@ -200,8 +200,7 @@ export async function POST(request: Request) {
       try {
         commitMessage = await generateWithOllama(diff, status);
         generatedBy = 'ai';
-      } catch {
-        // AI 실패시 규칙 기반으로 폴백
+      } catch { /* AI 실패시 규칙 기반으로 폴백 */
         commitMessage = generateSimpleMessage(status);
         generatedBy = 'rule';
       }

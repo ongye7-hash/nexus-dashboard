@@ -20,9 +20,7 @@ export async function GET(request: NextRequest) {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
           );
-        } catch {
-          // 스트림이 닫힌 경우 무시
-        }
+        } catch { /* 스트림이 닫힌 경우 무시 */ }
       });
 
       // 연결이 종료되면 정리

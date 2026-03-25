@@ -134,7 +134,7 @@ export async function GET(request: Request) {
             const conn = await connectSSH(server);
             conn.end();
             return { id: server.id, online: true };
-          } catch {
+          } catch { /* SSH 연결 실패 — 오프라인 처리 */
             return { id: server.id, online: false };
           }
         })
