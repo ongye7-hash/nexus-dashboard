@@ -146,6 +146,88 @@ GitHub + VPS + AI를 하나의 Settings 페이지로 합쳐라.
 
 ---
 
+## 추가 분석: 아까 못 잡은 것들
+
+### A. 프로젝트 ID가 매 요청마다 바뀐다
+
+```typescript
+// projects/route.ts:293
+id: `proj-${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${projects.length}`
+```
+
+프로젝트 ID가 `Date.now() + Math.random()`으로 생성된다. **페이지를 새로고침할 때마다 모든 프로젝트의 ID가 바뀐다.** 이게 왜 문제냐:
+- React의 key가 매번 바뀌므로 모든 카드가 매번 처음부터 다시 렌더링된다
+- 프로젝트 ID 기반의 캐시, 상태 참조가 새로고침 시 전부 무효화된다
+- `gitInfoMap[project.id]` — 새로고침하면 이전에 가져온 git 정보가 전부 날아간다
+
+프로젝트 경로의 해시값 같은 **결정론적 ID**를 써야 한다.
+
+### B. 프로젝트 스캔이 동기적이고 느리다
+
+`projects/route.ts` GET 핸들러가 하는 일:
+1. `fs.readdirSync` — Desktop 전체 읽기
+2. 각 폴더마다 `fs.existsSync` 11번 (프로젝트 식별)
+3. 각 폴더마다 `detectProjectType` — package.json 읽기 + 파싱
+4. 각 폴더마다 `getDirectorySize` — 재귀 탐색 (2단계)
+5. 각 폴더마다 `detectDeployUrl` — vercel.json, package.json 읽기
+6. 각 폴더마다 `execSync('git remote get-url origin')` — **30개 프로젝트면 30번 git 명령 실행**
+
+이 전부가 **동기적**으로 실행된다. 프로젝트가 30개면 수 초가 걸린다. 이게 무한로딩처럼 느껴졌던 원인이기도 하다.
+
+### C. `execGit` 함수가 여전히 쉘 인터폴레이션을 쓴다
+
+```typescript
+// git/route.ts:44
+return execSync(`git ${command}`, { ... });
+```
+
+git/route.ts의 GET 핸들러에서 쓰는 `execGit` 함수는 여전히 `execSync`에 문자열을 직접 넣는다. POST의 commit은 `execFileSync`로 수정했지만, **GET에서 쓰는 `execGit`은 안 바꿨다.** `command` 파라미터가 항상 하드코딩된 git 명령이라 실질적 위험은 낮지만, 패턴이 일관되지 않다.
+
+### D. insights/route.ts에서 branch 이름이 쉘에 들어간다
+
+```typescript
+// insights/route.ts:54
+execSync(`git rev-list --left-right --count ${branch}...origin/${branch}`, ...)
+```
+
+`branch`는 `git rev-parse --abbrev-ref HEAD`의 출력인데, 이론적으로 브랜치 이름에 쉘 메타문자가 있을 수 있다 (예: `feat/$(calc)`). 가능성은 낮지만 패턴이 위험하다.
+
+### E. 빈 catch 블록이 40개
+
+```
+grep "catch {" src/app/api/ → 40건
+```
+
+에러를 조용히 삼키는 빈 catch가 40개다. 이 중 상당수는 합리적이지만 (선택적 기능의 fallback), 디버깅할 때 "왜 안 되지?" 하고 한참 찾게 만드는 원인이 된다. 최소한 `console.warn`이라도 넣어야 한다.
+
+### F. MorningCodex의 데이터 로딩이 waterfall이다
+
+```
+페이지 로드
+  → fetchProjects (page.tsx)
+    → MorningCodex 렌더
+      → fetchGitInfo (각 프로젝트마다 /api/git 호출)
+      → fetchProcesses
+      → fetchStats
+      → fetchActiveSessions
+```
+
+MorningCodex가 마운트된 후에야 4개의 API를 호출한다. 그리고 `fetchGitInfo`는 pinned 프로젝트 6개에 대해 **각각 개별 fetch**를 한다. 즉 페이지 로드 시 최소 **7~10개의 API 요청이 순차적으로 또는 반병렬적으로** 발생한다.
+
+이걸 하나의 `/api/dashboard` 엔드포인트로 합치면 1번의 요청으로 줄일 수 있다.
+
+### G. 나 자신에 대한 비판
+
+솔직히 오늘 내가 만든 코드에 대해서도 비판해야 한다:
+
+1. **내가 보안 실수를 4번 반복했다** — 첫 구현에서 `execSync`에 직접 입력을 넣은 건 내 실수다. "보안 체크리스트가 없었다"고 했지만, 나한테 체크리스트가 내장되어 있어야 한다.
+
+2. **기능을 너무 빠르게 추가했다** — 사용자가 "전부 다 해"라고 했을 때, "이것만 먼저 하고 테스트하자"라고 했어야 했다. 대신 3개 에이전트를 병렬로 돌려서 한번에 구현했다. 속도는 빨랐지만 품질이 희생됐다.
+
+3. **에이전트에게 너무 많이 위임했다** — MorningCodex 1,270줄을 에이전트가 한 번에 작성했다. 내가 한 줄 한 줄 검토하지 않았다. 결과적으로 모놀리식 컴포넌트가 만들어졌다.
+
+---
+
 ## 9. 하지 말아야 할 것
 
 - **새 기능 추가** — 이미 충분하다. 더 추가하면 유지보수만 어려워진다
