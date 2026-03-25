@@ -40,7 +40,8 @@ export function useAI() {
 
   const callAI = useCallback(async (
     action: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    noCache?: boolean
   ): Promise<string | null> => {
     setLoading(true);
     setError(null);
@@ -49,7 +50,7 @@ export function useAI() {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...params }),
+        body: JSON.stringify({ action, ...params, ...(noCache && { noCache: true }) }),
       });
 
       const data = await res.json();
@@ -91,6 +92,7 @@ export function useAI() {
     loading,
     error,
     checkStatus,
+    callAI,
     summarizeProject,
     generateReadme,
     explainCode,

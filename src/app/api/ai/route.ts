@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { getSetting, setSetting, deleteSetting } from '@/lib/database';
 import { encrypt, decrypt } from '@/lib/crypto';
+import { validateProjectPath } from '@/lib/path-validator';
 
 const DEFAULT_MODEL = 'claude-opus-4-6';
 
@@ -294,7 +295,8 @@ export async function POST(request: Request) {
       const reviewDir = path.join(process.cwd(), '.nexus-data', 'reviews');
       if (!fs.existsSync(reviewDir)) fs.mkdirSync(reviewDir, { recursive: true });
 
-      const fileName = `review-${projectName || 'unknown'}-${Date.now()}.md`;
+      const safeName = (projectName || 'unknown').replace(/[^a-zA-Z0-9가-힣_-]/g, '_').slice(0, 50);
+      const fileName = `review-${safeName}-${Date.now()}.md`;
       const filePath = path.join(reviewDir, fileName);
       fs.writeFileSync(filePath, content, 'utf-8');
 
@@ -306,7 +308,11 @@ export async function POST(request: Request) {
       const { content } = body;
       if (!content || !projectPath) return NextResponse.json({ error: '내용과 경로가 필요합니다' }, { status: 400 });
 
-      const readmePath = path.join(projectPath, 'README.md');
+      const validation = validateProjectPath(projectPath);
+      if (!validation.isValid) {
+        return NextResponse.json({ error: validation.error || '잘못된 경로' }, { status: 403 });
+      }
+      const readmePath = path.join(validation.sanitizedPath!, 'README.md');
       fs.writeFileSync(readmePath, content, 'utf-8');
       return NextResponse.json({ success: true, path: readmePath });
     }
@@ -321,6 +327,17 @@ export async function POST(request: Request) {
     }
 
     const selectedModel = model || DEFAULT_MODEL;
+
+    // AI 기능 실행 전 공통 projectPath 검증
+    if (['summarize', 'generateReadme', 'suggestImprovements', 'explainCode'].includes(action)) {
+      if (!projectPath) {
+        return NextResponse.json({ error: '프로젝트 경로가 필요합니다' }, { status: 400 });
+      }
+      const pathCheck = validateProjectPath(projectPath);
+      if (!pathCheck.isValid) {
+        return NextResponse.json({ error: `잘못된 프로젝트 경로: ${pathCheck.error}` }, { status: 400 });
+      }
+    }
 
     switch (action) {
       case 'summarize': {
@@ -390,11 +407,20 @@ ${code}
 
       case 'explainCode': {
         const { filePath, lineStart, lineEnd } = body;
-        if (!filePath || !fs.existsSync(filePath)) {
+        if (!filePath || !projectPath) {
+          return NextResponse.json({ error: '파일 경로와 프로젝트 경로가 필요합니다' }, { status: 400 });
+        }
+        // filePath가 projectPath 하위인지 검증
+        const resolvedFile = path.resolve(filePath);
+        const resolvedProject = path.resolve(projectPath);
+        if (!resolvedFile.toLowerCase().startsWith(resolvedProject.toLowerCase())) {
+          return NextResponse.json({ error: '프로젝트 외부 파일에 접근할 수 없습니다' }, { status: 403 });
+        }
+        if (!fs.existsSync(resolvedFile)) {
           return NextResponse.json({ error: '파일을 찾을 수 없습니다' }, { status: 404 });
         }
 
-        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        const fileContent = fs.readFileSync(resolvedFile, 'utf-8');
         const lines = fileContent.split('\n');
         const codeSlice = lines.slice(lineStart - 1, lineEnd || lineStart + 20).join('\n');
 

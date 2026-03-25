@@ -50,6 +50,7 @@ export default function AIAssistant({
     summarizeProject,
     generateReadme,
     suggestImprovements,
+    callAI,
     checkStatus,
   } = useAI();
 
@@ -93,33 +94,15 @@ export default function AIAssistant({
     }
   };
 
-  // 캐시 무시하고 다시 분석
+  // 캐시 무시하고 다시 분석 (훅을 통해 로딩/에러 상태 동기화)
   const handleRefresh = async () => {
-    if (!currentAction) return;
+    if (!currentAction || loading) return;
     setResult(null);
     setIsCached(false);
 
     const model = selectedModel || undefined;
-    // noCache 플래그를 전달하기 위해 직접 fetch
-    try {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: currentAction,
-          projectPath,
-          model,
-          noCache: true,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const key = currentAction === 'summarize' ? 'summary'
-          : currentAction === 'generateReadme' ? 'readme'
-          : 'suggestions';
-        setResult(data[key]);
-      }
-    } catch {}
+    const response = await callAI(currentAction, { projectPath, model }, true);
+    if (response) setResult(response);
   };
 
   const handleCopy = () => {
@@ -179,16 +162,12 @@ export default function AIAssistant({
       });
       const data = await res.json();
       if (res.ok && data.filePath) {
-        // Claude Code를 대화형으로 열고, 리뷰 파일을 읽어서 적용하라고 지시
         const reviewPath = data.filePath.replace(/\\/g, '/');
-        onOpenTerminal(`claude`);
-        // 잠시 후 리뷰 적용 명령 전달 (Claude Code가 시작된 후)
-        setTimeout(() => {
-          onOpenTerminal(`cat "${reviewPath}" 파일의 코드 리뷰 내용을 이 프로젝트에 적용해줘`);
-        }, 3000);
+        // 단일 명령으로 Claude Code에 리뷰 파일을 전달
+        onOpenTerminal(`cat "${reviewPath}" | claude`);
       }
     } catch {
-      // fallback: 클립보드 복사 후 Claude Code 열기
+      // fallback: 클립보드 복사 안내
       navigator.clipboard.writeText(result);
       onOpenTerminal('claude');
       setSaveMessage('리뷰 내용이 클립보드에 복사되었습니다. Claude Code에서 붙여넣기하세요.');
