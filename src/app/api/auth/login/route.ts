@@ -46,11 +46,14 @@ export async function POST(request: Request) {
     recordLoginAttempt(ip, true);
     const token = await createSession(ip, userAgent);
 
+    const isHttps = request.headers.get('x-forwarded-proto') === 'https'
+      || request.url.startsWith('https://');
+
     const response = NextResponse.json({ success: true });
     response.cookies.set('nexus_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: isHttps,
+      sameSite: isHttps ? 'strict' : 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7일
     });
