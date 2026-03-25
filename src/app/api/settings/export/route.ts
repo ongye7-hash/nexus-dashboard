@@ -11,10 +11,12 @@ export async function GET() {
         notifications_enabled: getSetting('notifications_enabled') || null,
         last_heatmap_import: getSetting('last_heatmap_import') || null,
       },
-      // Encrypted credentials are exported as-is (only restorable on same machine with same encryption key)
-      github_token: getSetting('github_token') || null,
-      claude_api_key: getSetting('claude_api_key') || null,
-      vps_servers: getAllVPSServers(),
+      // 토큰/키는 보안상 내보내기에서 제외 — 가져오기 후 재입력 필요
+      vps_servers: getAllVPSServers().map(s => ({
+        ...s,
+        encrypted_credential: null, // 자격증명은 내보내지 않음
+        host_key: null,
+      })),
       groups: getAllGroups(),
     };
 

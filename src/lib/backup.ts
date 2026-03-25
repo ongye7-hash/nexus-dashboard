@@ -1,13 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 
-const DB_PATH = path.join(process.cwd(), '.nexus-data', 'nexus.db');
 const BACKUP_DIR = path.join(process.cwd(), '.nexus-data', 'backups');
 const MAX_BACKUPS = 7;
 
 export function runBackup(): string | null {
   try {
-    if (!fs.existsSync(DB_PATH)) return null;
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
     const date = new Date().toISOString().split('T')[0];
@@ -16,8 +14,10 @@ export function runBackup(): string | null {
     // Skip if today's backup already exists
     if (fs.existsSync(backupPath)) return backupPath;
 
-    // Copy the DB file (SQLite WAL mode safe with file copy when no writes)
-    fs.copyFileSync(DB_PATH, backupPath);
+    // VACUUM INTO — WAL 모드에서도 안전한 원자적 백업
+    const { getDb } = require('./db/index');
+    const db = getDb();
+    db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
 
     // Clean old backups (keep last MAX_BACKUPS)
     cleanOldBackups();

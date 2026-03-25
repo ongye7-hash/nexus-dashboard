@@ -11,27 +11,17 @@ export async function POST(request: Request) {
 
     let restored = 0;
 
-    // Settings
+    // Settings (허용된 키만 복원)
+    const ALLOWED_KEYS = new Set(['scan_paths', 'notifications_enabled', 'last_heatmap_import']);
     if (data.settings) {
       for (const [key, value] of Object.entries(data.settings)) {
-        if (value !== null && typeof value === 'string') {
+        if (ALLOWED_KEYS.has(key) && value !== null && typeof value === 'string') {
           setSetting(key, value);
           restored++;
         }
       }
     }
-
-    // GitHub token (encrypted — only works on same machine)
-    if (data.github_token) {
-      setSetting('github_token', data.github_token);
-      restored++;
-    }
-
-    // Claude API key (encrypted)
-    if (data.claude_api_key) {
-      setSetting('claude_api_key', data.claude_api_key);
-      restored++;
-    }
+    // 토큰/키는 import에서 복원하지 않음 — 보안상 재입력 필요
 
     // VPS servers
     if (data.vps_servers && Array.isArray(data.vps_servers)) {
