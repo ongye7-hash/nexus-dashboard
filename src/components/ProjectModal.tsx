@@ -44,6 +44,7 @@ import { GitInfo } from './GitInfo';
 import ProjectTodos from './ProjectTodos';
 import AIAssistant from './AIAssistant';
 import TerminalEmbed from './Terminal';
+import ServicePanel from './ServicePanel';
 
 interface ProjectModalProps {
   project: Project | null;
@@ -926,6 +927,13 @@ export function ProjectModal({
                       <TerminalIcon className="w-4 h-4 text-amber-400" />
                       로그 보기
                     </button>
+                  </div>
+                )}
+
+                {/* PM2/Docker 관리 */}
+                {project.isVPS && project.vpsServerId && (
+                  <div className="px-6 py-4 border-b border-[#27272a]">
+                    <ServicePanel serverId={project.vpsServerId} serverName={project.vpsServerName || 'VPS'} />
                   </div>
                 )}
 

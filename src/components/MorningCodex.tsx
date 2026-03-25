@@ -14,6 +14,7 @@ import GreetingHeader from './codex/GreetingHeader';
 import AlertsPanel, { AlertItem } from './codex/AlertsPanel';
 import RunningServers from './codex/RunningServers';
 import FocusProjectCard from './codex/FocusProjectCard';
+import ProgressSection from './codex/ProgressSection';
 
 // ============ Types ============
 
@@ -360,6 +361,9 @@ export function MorningCodex({
         dismissedAlerts={dismissedAlerts}
         onDismiss={(id) => setDismissedAlerts(prev => new Set([...prev, id]))}
       />
+
+      {/* 현재 작업 상태 */}
+      <ProgressSection />
 
       {/* 3. 실행 중인 서버 */}
       <RunningServers

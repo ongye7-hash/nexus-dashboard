@@ -119,7 +119,55 @@ program
   .description('List all projects')
   .option('-f, --framework <type>', 'Filter by framework')
   .option('-g, --git', 'Show only git projects')
-  .action((options) => {
+  .action(async (options) => {
+    const spinner = ora('프로젝트를 검색 중...').start();
+
+    // Try API first (has more metadata)
+    try {
+      const res = await fetch(`${NEXUS_URL}/api/projects`);
+      if (res.ok) {
+        const data = await res.json();
+        spinner.stop();
+        console.log(chalk.bold.cyan('\n  NEXUS Projects') + chalk.gray(' (via dashboard)\n'));
+
+        let filtered = data.projects || data;
+
+        if (options.framework) {
+          filtered = filtered.filter(p =>
+            (p.framework || '').toLowerCase().includes(options.framework.toLowerCase())
+          );
+        }
+        if (options.git) {
+          filtered = filtered.filter(p => p.hasGit);
+        }
+
+        if (filtered.length === 0) {
+          console.log(chalk.yellow('  No projects found.\n'));
+          return;
+        }
+
+        filtered.forEach((p, i) => {
+          const gitIcon = p.hasGit ? chalk.green('●') : chalk.gray('○');
+          const fwColor = {
+            'Next.js': chalk.blue,
+            'React': chalk.cyan,
+            'Vue': chalk.green,
+            'Node.js': chalk.yellow,
+          }[p.framework] || chalk.gray;
+
+          console.log(
+            `  ${chalk.gray(`${i + 1}.`)} ${gitIcon} ${chalk.white.bold(p.name)} ${fwColor(`[${p.framework || 'unknown'}]`)}`
+          );
+        });
+
+        console.log(chalk.gray(`\n  Total: ${filtered.length} projects\n`));
+        return;
+      }
+    } catch {
+      // API not available, fall back to local scan
+    }
+
+    spinner.stop();
     console.log(chalk.bold.cyan('\n  NEXUS Projects\n'));
 
     const projects = scanProjects();
@@ -412,6 +460,51 @@ program
     }
   });
 
+// 대시보드 통계
+program
+  .command('status')
+  .alias('st')
+  .description('대시보드 통계 표시 (스트릭, 오늘 활동)')
+  .action(async () => {
+    const spinner = ora('통계를 불러오는 중...').start();
+    try {
+      const res = await fetch(`${NEXUS_URL}/api/stats`);
+      if (!res.ok) throw new Error('대시보드가 실행 중이 아닙니다');
+      const data = await res.json();
+      spinner.stop();
+
+      console.log();
+      console.log(chalk.bold.white('📊 Nexus Dashboard 통계'));
+      console.log(chalk.gray('─'.repeat(40)));
+
+      // Streak
+      if (data.streak) {
+        const streakEmoji = data.streak.current >= 7 ? '🔥' : data.streak.current >= 3 ? '⚡' : '📅';
+        console.log(`${streakEmoji} 스트릭: ${chalk.bold.yellow(data.streak.current)}일 연속 (최고: ${data.streak.longest}일)`);
+      }
+
+      // Weekly stats
+      if (data.stats) {
+        console.log(`📝 이번 주: 커밋 ${chalk.bold.green(data.stats.weekCommits)}개, ${chalk.bold.blue(data.stats.weekDays)}일 활동`);
+        if (data.stats.weekMinutes > 0) {
+          const hours = Math.floor(data.stats.weekMinutes / 60);
+          const mins = data.stats.weekMinutes % 60;
+          console.log(`⏱  작업 시간: ${hours > 0 ? `${hours}시간 ` : ''}${mins}분`);
+        }
+      }
+
+      // Badges
+      if (data.badges && data.badges.length > 0) {
+        console.log(`🏅 뱃지: ${data.badges.length}개 획득`);
+      }
+
+      console.log();
+    } catch (err) {
+      spinner.fail(chalk.red('통계를 불러올 수 없습니다'));
+      console.log(chalk.gray('  대시보드가 실행 중인지 확인하세요 (npm run dev)'));
+    }
+  });
+
 // 기본 명령어 (nexus만 입력했을 때)
 program
   .action(() => {
@@ -423,6 +516,7 @@ program
     console.log(chalk.white('  Your personal developer command center\n'));
     console.log(chalk.gray('  Commands:'));
     console.log(chalk.cyan('    nexus list') + chalk.gray('         - List all projects'));
+    console.log(chalk.cyan('    nexus status') + chalk.gray('       - Show dashboard stats'));
     console.log(chalk.cyan('    nexus open <name>') + chalk.gray('  - Open project in VSCode'));
     console.log(chalk.cyan('    nexus run <name>') + chalk.gray('   - Run project (npm run dev)'));
     console.log(chalk.cyan('    nexus servers') + chalk.gray('      - List running servers'));
