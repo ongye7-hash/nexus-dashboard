@@ -13,6 +13,7 @@ import {
   WifiOff,
   ChevronDown,
   Download,
+  Terminal,
 } from 'lucide-react';
 import { useAI } from '@/hooks/useAI';
 import ReactMarkdown from 'react-markdown';
@@ -21,6 +22,7 @@ interface AIAssistantProps {
   projectPath: string;
   projectName: string;
   onClose?: () => void;
+  onOpenTerminal?: (command: string) => void;
 }
 
 type AIAction = 'summarize' | 'generateReadme' | 'suggestImprovements';
@@ -29,6 +31,7 @@ export default function AIAssistant({
   projectPath,
   projectName,
   onClose,
+  onOpenTerminal,
 }: AIAssistantProps) {
   const {
     status,
@@ -270,6 +273,18 @@ export default function AIAssistant({
                 ← 다른 작업 선택
               </button>
               <div className="flex items-center gap-2">
+                {currentAction === 'suggestImprovements' && onOpenTerminal && (
+                  <button
+                    onClick={() => {
+                      const prompt = `다음 코드 리뷰 결과를 이 프로젝트에 적용해줘. 각 항목을 하나씩 수정하고, 완료되면 요약 알려줘:\n\n${result}`;
+                      onOpenTerminal(`claude -p "${prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded-lg text-xs text-white transition-colors"
+                  >
+                    <Terminal className="w-3.5 h-3.5" />
+                    Claude Code로 적용
+                  </button>
+                )}
                 {currentAction === 'generateReadme' && (
                   <button
                     onClick={handleDownloadReadme}

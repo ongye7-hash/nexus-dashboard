@@ -123,6 +123,7 @@ export function ProjectModal({
   const [showLivePreview, setShowLivePreview] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showClaudeCode, setShowClaudeCode] = useState(false);
+  const [claudeAutoCommand, setClaudeAutoCommand] = useState<string>('claude');
 
   useEffect(() => {
     if (project) {
@@ -678,7 +679,16 @@ export function ProjectModal({
 
               {/* AI 어시스턴트 섹션 */}
               <div className="p-4 border-b border-[#27272a]">
-                <AIAssistant projectPath={project.path} projectName={project.name} />
+                <AIAssistant
+                  projectPath={project.path}
+                  projectName={project.name}
+                  onOpenTerminal={(command) => {
+                    setShowClaudeCode(false);
+                    setShowTerminal(false);
+                    setClaudeAutoCommand(command);
+                    setTimeout(() => setShowClaudeCode(true), 200);
+                  }}
+                />
               </div>
 
               {/* 액션 버튼들 */}
@@ -720,7 +730,7 @@ export function ProjectModal({
                       내장 터미널
                     </button>
                     <button
-                      onClick={() => setShowClaudeCode(!showClaudeCode)}
+                      onClick={() => { setClaudeAutoCommand('claude'); setShowClaudeCode(!showClaudeCode); }}
                       className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm text-white transition-colors"
                     >
                       <TerminalIcon className="w-4 h-4" />
@@ -745,7 +755,7 @@ export function ProjectModal({
                   <div className="mt-3" style={{ height: '500px' }}>
                     <TerminalEmbed
                       cwd={project.path}
-                      autoCommand="claude"
+                      autoCommand={claudeAutoCommand}
                       onClose={() => setShowClaudeCode(false)}
                       className="h-full"
                     />
