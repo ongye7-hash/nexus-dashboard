@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
 import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos } from '@/lib/database';
 
@@ -170,8 +170,7 @@ function loadAllMeta(): Record<string, any> {
     const metaMap: Record<string, any> = {};
 
     for (const meta of allMeta) {
-      const projectName = path.basename(meta.project_path);
-      metaMap[projectName] = {
+      metaMap[meta.project_path] = {
         description: meta.notes,
         tags: meta.tags ? JSON.parse(meta.tags) : [],
         status: meta.status,
@@ -189,35 +188,7 @@ function loadAllMeta(): Record<string, any> {
   }
 }
 
-function getDirectorySize(dirPath: string, maxDepth = 2): { size: number; fileCount: number } {
-  let size = 0;
-  let fileCount = 0;
 
-  function walk(currentPath: string, depth: number) {
-    if (depth > maxDepth) return;
-
-    try {
-      const items = fs.readdirSync(currentPath);
-      for (const item of items) {
-        if (IGNORED_FOLDERS.includes(item)) continue;
-
-        const fullPath = path.join(currentPath, item);
-        try {
-          const stat = fs.statSync(fullPath);
-          if (stat.isFile()) {
-            size += stat.size;
-            fileCount++;
-          } else if (stat.isDirectory()) {
-            walk(fullPath, depth + 1);
-          }
-        } catch { /* 개별 파일 stat 실패 — 건너뜀 */ }
-      }
-    } catch { /* 디렉토리 읽기 실패 — 건너뜀 */ }
-  }
-
-  walk(dirPath, 0);
-  return { size, fileCount };
-}
 
 export async function GET() {
   try {
@@ -264,7 +235,7 @@ export async function GET() {
 
         if (!isProject) continue;
 
-        const projectMeta = meta[item] || {};
+        const projectMeta = meta[fullPath] || {};
 
         let status: ProjectStatus = 'development';
         if (projectMeta.status) {
@@ -288,9 +259,9 @@ export async function GET() {
         let githubFullName: string | undefined;
         if (hasGit) {
           try {
-            const remoteUrl = execSync('git remote get-url origin', {
+            const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], {
               cwd: fullPath, encoding: 'utf-8', timeout: 1000, windowsHide: true,
-            }).trim();
+            }).toString().trim();
             const ghMatch = remoteUrl.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
             if (ghMatch) {
               githubFullName = `${ghMatch[1]}/${ghMatch[2]}`;

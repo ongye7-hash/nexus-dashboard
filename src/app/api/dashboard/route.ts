@@ -17,8 +17,8 @@ export async function GET() {
     // 2. Activity data (last 7 days for yesterday recap)
     const activity = getDailyActivity(7);
 
-    // 3. Projects metadata
-    const projects = getAllProjectMeta();
+    // 3. Projects metadata (raw DB rows, not enriched Project objects)
+    const projectMeta = getAllProjectMeta();
 
     // 4. Groups
     const groups = getAllGroups();
@@ -72,7 +72,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      projects,
+      projectMeta,
       streak,
       newBadges,
       badges,

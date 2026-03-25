@@ -167,11 +167,12 @@ export async function GET(request: Request) {
     info.remoteUrl = remoteUrl;
     info.hasRemote = true;
 
-    // Ahead/behind
-    const aheadBehind = execGit(
+    // Ahead/behind (branch가 null이면 스킵)
+    if (!branch) { info.ahead = 0; info.behind = 0; }
+    const aheadBehind = branch ? execGit(
       safePath,
       'rev-list', '--left-right', '--count', `${branch}...origin/${branch}`
-    );
+    ) : null;
     if (aheadBehind) {
       const [ahead, behind] = aheadBehind.split('\t').map(Number);
       info.ahead = ahead || 0;
