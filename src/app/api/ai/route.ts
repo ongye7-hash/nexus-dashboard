@@ -4,7 +4,7 @@ import path from 'path';
 import { getSetting, setSetting } from '@/lib/database';
 import { encrypt, decrypt } from '@/lib/crypto';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_MODEL = 'claude-opus-4-6';
 
 // Claude API 호출
 async function callClaude(
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         online: !!apiKey,
         provider: 'claude',
-        models: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
+        models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
         defaultModel: DEFAULT_MODEL,
       });
     }
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
+            model: 'claude-haiku-4-5-20251001', // 검증은 저렴한 모델로
             max_tokens: 10,
             messages: [{ role: 'user', content: 'Hi' }],
           }),
