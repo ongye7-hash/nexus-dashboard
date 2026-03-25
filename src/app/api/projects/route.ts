@@ -4,7 +4,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
-import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos } from '@/lib/database';
+import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos, getAllVPSServers } from '@/lib/database';
+import { connectSSH, sshExec } from '@/lib/ssh';
 
 function detectLanguageType(language: string | null): ProjectType {
   if (!language) return 'unknown';
@@ -337,6 +338,108 @@ export async function GET() {
       }
     } catch (error) {
       console.warn('GitHub 레포 목록 로드 실패:', error);
+    }
+
+    // VPS 프로젝트 추가 (5초 타임아웃)
+    try {
+      const vpsServers = getAllVPSServers();
+      const VPS_TIMEOUT = 5000;
+
+      const vpsPromises = vpsServers.map(async (server) => {
+        const vpsProjects: Project[] = [];
+        try {
+          const conn = await connectSSH(server);
+          const cwd = server.default_cwd || '/home';
+          const lsOutput = await sshExec(conn, `ls -d ${cwd}/*/ 2>/dev/null | head -30`);
+          const dirs = lsOutput.split('\n').filter(Boolean);
+
+          for (const dir of dirs) {
+            const name = dir.replace(/\/$/, '').split('/').pop() || '';
+            if (!name || name.startsWith('.')) continue;
+
+            const checkResult = await sshExec(conn,
+              `cd "${dir}" && ls package.json .git requirements.txt pyproject.toml index.html 2>/dev/null | head -5`
+            );
+            if (!checkResult) continue;
+
+            const hasGit = checkResult.includes('.git');
+            const hasPackageJson = checkResult.includes('package.json');
+
+            let gitBranch = '';
+            let lastCommit = '';
+            if (hasGit) {
+              gitBranch = await sshExec(conn, `cd "${dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null`).catch(() => '');
+              lastCommit = await sshExec(conn, `cd "${dir}" && git log -1 --format="%s (%ar)" 2>/dev/null`).catch(() => '');
+            }
+
+            let framework = '';
+            if (hasPackageJson) {
+              const pkgCheck = await sshExec(conn, `cd "${dir}" && cat package.json 2>/dev/null | head -50`).catch(() => '');
+              if (pkgCheck.includes('"next"')) framework = 'Next.js';
+              else if (pkgCheck.includes('"react"')) framework = 'React';
+              else if (pkgCheck.includes('"vue"')) framework = 'Vue';
+              else if (pkgCheck.includes('"express"')) framework = 'Express';
+              else framework = 'Node.js';
+            } else if (checkResult.includes('requirements.txt') || checkResult.includes('pyproject.toml')) {
+              framework = 'Python';
+            }
+
+            const dirClean = dir.replace(/\/$/, '');
+            const projectType: ProjectType = framework.toLowerCase().includes('next') ? 'nextjs'
+              : framework.toLowerCase().includes('react') ? 'react'
+              : framework.toLowerCase().includes('vue') ? 'vue'
+              : framework.toLowerCase().includes('python') ? 'python'
+              : hasPackageJson ? 'node'
+              : 'unknown';
+
+            vpsProjects.push({
+              id: `vps-${crypto.createHash('md5').update(`${server.id}:${dirClean}`).digest('hex').slice(0, 12)}`,
+              name,
+              path: dirClean,
+              type: projectType,
+              framework: framework || undefined,
+              lastModified: new Date().toISOString(),
+              lastModifiedRelative: '방금',
+              status: 'active' as ProjectStatus,
+              description: lastCommit || undefined,
+              techStack: framework ? [framework] : [],
+              hasPackageJson,
+              hasGit,
+              isVPS: true,
+              vpsServerId: server.id,
+              vpsServerName: server.name,
+              size: 0,
+              fileCount: 0,
+              tags: [],
+              pinned: false,
+            });
+          }
+
+          conn.end();
+        } catch (err) {
+          console.warn(`VPS ${server.name} 스캔 실패:`, err instanceof Error ? err.message : err);
+        }
+        return vpsProjects;
+      });
+
+      // 전체 VPS 스캔에 타임아웃 적용
+      const vpsResults = await Promise.race([
+        Promise.allSettled(vpsPromises),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('VPS 스캔 타임아웃')), VPS_TIMEOUT)),
+      ]).catch(() => [] as PromiseSettledResult<Project[]>[]);
+
+      for (const result of vpsResults) {
+        if (result.status === 'fulfilled') {
+          // 로컬에 이미 같은 이름의 프로젝트가 있으면 스킵
+          for (const vp of result.value) {
+            if (!projects.some(p => p.name === vp.name && !p.isVPS)) {
+              projects.push(vp);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('VPS 프로젝트 스캔 실패:', error);
     }
 
     // Sort: pinned first, then by last modified

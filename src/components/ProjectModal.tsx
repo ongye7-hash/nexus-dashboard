@@ -32,6 +32,9 @@ import {
   Star,
   GitFork,
   AlertCircle as IssueIcon,
+  ArrowUpCircle,
+  Loader2,
+  Server,
 } from 'lucide-react';
 import { Project, ProjectStatus, ProjectGroup, PROJECT_TYPE_COLORS, STATUS_COLORS, STATUS_LABELS, PROJECT_TYPE_LABELS } from '@/lib/types';
 import { FileTree } from './FileTree';
@@ -124,6 +127,8 @@ export function ProjectModal({
   const [showTerminal, setShowTerminal] = useState(false);
   const [showClaudeCode, setShowClaudeCode] = useState(false);
   const [claudeAutoCommand, setClaudeAutoCommand] = useState<string>('claude');
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (project) {
@@ -140,6 +145,8 @@ export function ProjectModal({
       setShowTerminal(false);
       setShowClaudeCode(false);
       setNewTag('');
+      setDeploying(false);
+      setDeployResult(null);
     }
   }, [project]);
 
@@ -298,6 +305,31 @@ export function ProjectModal({
   };
 
   const currentGroupData = groups.find((g) => g.id === currentGroup);
+
+  const handleDeploy = async () => {
+    if (!project.isVPS || !project.vpsServerId) return;
+    setDeploying(true);
+    setDeployResult(null);
+    try {
+      const res = await fetch('/api/vps/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverId: project.vpsServerId,
+          remotePath: project.path,
+          commands: ['git pull', 'pm2 restart all'],
+        }),
+      });
+      const data = await res.json();
+      setDeployResult({ success: data.success, message: data.message || (data.success ? '배포 완료' : '배포 실패') });
+      setTimeout(() => setDeployResult(null), 5000);
+    } catch (error) {
+      console.warn('Deploy failed:', error);
+      setDeployResult({ success: false, message: '배포 요청 실패' });
+    } finally {
+      setDeploying(false);
+    }
+  };
 
   const actions = [
     {
@@ -739,11 +771,51 @@ export function ProjectModal({
                   </div>
                 )}
 
+                {/* VPS Quick Actions */}
+                {project.isVPS && project.vpsServerId && (
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={handleDeploy}
+                      disabled={deploying}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg text-sm text-white transition-colors"
+                    >
+                      {deploying ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpCircle className="w-4 h-4" />}
+                      {deploying ? '배포 중...' : '배포 (git pull + restart)'}
+                    </button>
+                    <button
+                      onClick={() => { setShowTerminal(true); }}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 hover:bg-[#27272a] transition-colors"
+                    >
+                      <TerminalIcon className="w-4 h-4 text-cyan-400" />
+                      SSH 터미널
+                    </button>
+                    <button
+                      onClick={() => { setShowClaudeCode(false); setShowTerminal(false); setTimeout(() => setShowTerminal(true), 100); setClaudeAutoCommand('pm2 logs --lines 100'); }}
+                      className="flex items-center gap-2 px-4 py-2 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-300 hover:bg-[#27272a] transition-colors"
+                    >
+                      <TerminalIcon className="w-4 h-4 text-amber-400" />
+                      로그 보기
+                    </button>
+                  </div>
+                )}
+
+                {/* Deploy result */}
+                {deployResult && (
+                  <div className={`mt-2 px-3 py-2 rounded-lg text-xs ${
+                    deployResult.success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                  }`}>
+                    {deployResult.message}
+                  </div>
+                )}
+
                 {/* 내장 터미널 */}
                 {showTerminal && !project.isGithubOnly && (
                   <div className="mt-3" style={{ height: '400px' }}>
                     <TerminalEmbed
                       cwd={project.path}
+                      mode={project.isVPS ? 'ssh' : 'local'}
+                      serverId={project.isVPS ? project.vpsServerId : undefined}
+                      autoCommand={project.isVPS ? claudeAutoCommand : undefined}
                       onClose={() => setShowTerminal(false)}
                       className="h-full"
                     />

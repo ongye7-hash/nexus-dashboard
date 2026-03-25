@@ -438,7 +438,7 @@ export default function Home() {
     if (activeFilter === 'deployed') return p.status === 'deployed';
     if (activeFilter === 'archived') return p.status === 'archived';
     if (activeFilter === 'github') return !!p.githubUrl;
-    if (activeFilter === 'vps') return false; // VPS 프로젝트는 Phase 3에서 추가
+    if (activeFilter === 'vps') return !!p.isVPS;
     if (activeFilter.startsWith('type:')) {
       const type = activeFilter.replace('type:', '');
       return p.type === type;

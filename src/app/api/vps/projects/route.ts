@@ -1,0 +1,85 @@
+import { NextResponse } from 'next/server';
+import { getVPSServer } from '@/lib/database';
+import { connectSSH, sshExec } from '@/lib/ssh';
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const serverId = searchParams.get('id');
+
+  if (!serverId || typeof serverId !== 'string') {
+    return NextResponse.json({ error: '서버 ID가 필요합니다' }, { status: 400 });
+  }
+
+  const server = getVPSServer(serverId);
+  if (!server) {
+    return NextResponse.json({ error: '서버를 찾을 수 없습니다' }, { status: 404 });
+  }
+
+  try {
+    const conn = await connectSSH(server);
+
+    // Get project directories from default_cwd
+    const cwd = server.default_cwd || '/home';
+    const lsOutput = await sshExec(conn, `ls -d ${cwd}/*/ 2>/dev/null | head -30`);
+
+    const projects = [];
+    const dirs = lsOutput.split('\n').filter(Boolean);
+
+    for (const dir of dirs) {
+      const name = dir.replace(/\/$/, '').split('/').pop() || '';
+      if (!name || name.startsWith('.')) continue;
+
+      // Check if it's a project (has package.json, .git, requirements.txt, etc)
+      const checkResult = await sshExec(conn,
+        `cd "${dir}" && ls package.json .git requirements.txt pyproject.toml index.html 2>/dev/null | head -5`
+      );
+      if (!checkResult) continue; // Not a project
+
+      const hasGit = checkResult.includes('.git');
+      const hasPackageJson = checkResult.includes('package.json');
+
+      // Get git info if available
+      let gitBranch = '';
+      let lastCommit = '';
+      let uncommittedCount = 0;
+
+      if (hasGit) {
+        gitBranch = await sshExec(conn, `cd "${dir}" && git rev-parse --abbrev-ref HEAD 2>/dev/null`).catch(() => '');
+        lastCommit = await sshExec(conn, `cd "${dir}" && git log -1 --format="%s (%ar)" 2>/dev/null`).catch(() => '');
+        const statusOutput = await sshExec(conn, `cd "${dir}" && git status --porcelain 2>/dev/null | wc -l`).catch(() => '0');
+        uncommittedCount = parseInt(statusOutput) || 0;
+      }
+
+      // Detect framework
+      let framework = '';
+      if (hasPackageJson) {
+        const pkgCheck = await sshExec(conn, `cd "${dir}" && cat package.json 2>/dev/null | head -50`).catch(() => '');
+        if (pkgCheck.includes('"next"')) framework = 'Next.js';
+        else if (pkgCheck.includes('"react"')) framework = 'React';
+        else if (pkgCheck.includes('"vue"')) framework = 'Vue';
+        else if (pkgCheck.includes('"express"')) framework = 'Express';
+        else framework = 'Node.js';
+      } else if (checkResult.includes('requirements.txt') || checkResult.includes('pyproject.toml')) {
+        framework = 'Python';
+      }
+
+      projects.push({
+        name,
+        path: dir.replace(/\/$/, ''),
+        framework,
+        hasGit,
+        hasPackageJson,
+        gitBranch,
+        lastCommit,
+        uncommittedCount,
+      });
+    }
+
+    conn.end();
+    return NextResponse.json({ projects, serverId, serverName: server.name });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'SSH 연결 실패';
+    console.warn('VPS project scan failed:', message);
+    return NextResponse.json({ error: `VPS 프로젝트 스캔 실패: ${message}` }, { status: 500 });
+  }
+}

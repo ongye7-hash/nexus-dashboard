@@ -23,6 +23,9 @@ export interface Project {
   isGithubOnly?: boolean;
   githubStars?: number;
   githubForks?: number;
+  isVPS?: boolean;
+  vpsServerId?: string;
+  vpsServerName?: string;
 }
 
 export interface ProjectGroup {
