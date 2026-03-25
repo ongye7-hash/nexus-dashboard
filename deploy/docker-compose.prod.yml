@@ -19,8 +19,7 @@ services:
       - NODE_ENV=production
       - HOSTNAME=0.0.0.0
       - PORT=8507
-      # 도메인 연결 후 아래 주석 해제
-      # - NEXUS_ORIGIN=https://your-domain.com
+      - NEXUS_ORIGIN=https://ongye.org
 
 volumes:
   nexus-data:
