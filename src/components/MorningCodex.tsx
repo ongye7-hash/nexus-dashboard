@@ -268,7 +268,7 @@ export function MorningCodex({
       const res = await fetch('/api/work-sessions');
       if (!res.ok) return;
       const data = await res.json();
-      setActiveSessions(data.sessions || []);
+      setActiveSessions(data.activeSessions || []);
     } catch {
       // API may not exist - gracefully handle
       setActiveSessions([]);
@@ -632,6 +632,13 @@ export function MorningCodex({
           result: { success: true, text: andPush ? 'Commit & Push 완료!' : 'Commit 완료!' },
         },
       }));
+
+      // 활동 기록 (히트맵/스트릭에 반영)
+      fetch('/api/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'record', type: 'commit' }),
+      }).catch(() => {});
 
       // Refresh git info
       fetchGitInfo();

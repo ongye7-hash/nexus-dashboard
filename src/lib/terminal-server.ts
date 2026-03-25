@@ -52,7 +52,7 @@ function createServer() {
     console.error('Failed to write terminal token:', e);
   }
 
-  const wss = new WebSocketServer({ port: PORT });
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT });
   serverInstance = wss;
   console.log(`Terminal WebSocket server running on ws://localhost:${PORT}`);
 
@@ -99,7 +99,14 @@ function createServer() {
     const cwd = url.searchParams.get('cwd') || 'C:\\Users\\user\\Desktop';
 
     // Validate cwd exists
-    const safeCwd = fs.existsSync(cwd) ? cwd : 'C:\\Users\\user\\Desktop';
+    let safeCwd = 'C:\\Users\\user\\Desktop';
+    try {
+      const { validateProjectPath } = require('./path-validator');
+      const validation = validateProjectPath(cwd);
+      safeCwd = validation.isValid && validation.sanitizedPath ? validation.sanitizedPath : safeCwd;
+    } catch {
+      safeCwd = fs.existsSync(cwd) ? cwd : safeCwd;
+    }
 
     // Create PTY process
     const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
@@ -214,8 +221,11 @@ async function handleSSHConnection(ws: WebSocket, serverId: string, url: URL, se
       if (server.auth_type === 'password') {
         config.password = credential;
       } else if (server.auth_type === 'key_file') {
-        if (fs.existsSync(credential)) {
-          config.privateKey = fs.readFileSync(credential);
+        const pathMod = require('path');
+        const resolved = pathMod.resolve(credential);
+        const sshDir = pathMod.resolve(process.env.HOME || 'C:\\Users\\user', '.ssh');
+        if (resolved.startsWith(sshDir) && fs.existsSync(resolved)) {
+          config.privateKey = fs.readFileSync(resolved);
         }
       } else if (server.auth_type === 'key_content') {
         config.privateKey = credential;

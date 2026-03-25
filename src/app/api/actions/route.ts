@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { exec, execSync } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { savePortMapping as dbSavePortMapping } from '@/lib/database';
+import { validateProjectPath } from '@/lib/path-validator';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // 프로젝트의 package.json에서 포트 추출
 function detectPortFromPackageJson(projectPath: string): number {
@@ -37,43 +38,49 @@ function detectPortFromPackageJson(projectPath: string): number {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { action, path } = body;
+    const { action, path: requestPath } = body;
 
-    if (!path) {
+    if (!requestPath) {
       return NextResponse.json({ error: '경로가 필요합니다' }, { status: 400 });
     }
+
+    const validation = validateProjectPath(requestPath);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: validation.error || '잘못된 경로' }, { status: 400 });
+    }
+    const safePath = validation.sanitizedPath!;
 
     switch (action) {
       case 'openFolder':
         // Windows 탐색기로 폴더 열기
-        await execAsync(`explorer "${path}"`);
+        await execFileAsync('explorer', [safePath]);
         return NextResponse.json({ success: true, message: '폴더를 열었습니다' });
 
       case 'openVSCode':
         // VSCode로 열기
-        await execAsync(`code "${path}"`);
+        await execFileAsync('code', [safePath]);
         return NextResponse.json({ success: true, message: 'VSCode를 열었습니다' });
 
       case 'openTerminal':
         // Windows Terminal 또는 cmd로 열기
         try {
           // Windows Terminal 시도
-          await execAsync(`wt -d "${path}"`);
+          await execFileAsync('wt', ['-d', safePath]);
         } catch {
           // 실패하면 cmd로 열기
-          await execAsync(`start cmd /k "cd /d ${path}"`);
+          await execFileAsync('cmd', ['/c', 'start', 'cmd', '/k', `cd /d "${safePath}"`]);
         }
         return NextResponse.json({ success: true, message: '터미널을 열었습니다' });
 
       case 'runProject':
         // 프로젝트 실행 (새 터미널에서)
-        const port = detectPortFromPackageJson(path);
-        dbSavePortMapping(path, port);
+        const port = detectPortFromPackageJson(safePath);
+        dbSavePortMapping(safePath, port);
 
         try {
-          await execAsync(`wt -d "${path}" cmd /k "npm run dev"`);
+          await execFileAsync('wt', ['-d', safePath, 'cmd', '/k', 'npm run dev']);
         } catch {
-          await execAsync(`start cmd /k "cd /d ${path} && npm run dev"`);
+          await execFileAsync('cmd', ['/c', 'start', 'cmd', '/k', `cd /d "${safePath}" && npm run dev`]);
         }
         return NextResponse.json({ success: true, message: '프로젝트를 실행했습니다', port });
 

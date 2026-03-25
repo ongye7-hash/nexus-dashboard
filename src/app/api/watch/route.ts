@@ -5,6 +5,8 @@ import { fileWatcher, FileChangeEvent } from '@/lib/fileWatcher';
 export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
 
+  let unsubscribe: (() => void) | null = null;
+
   const stream = new ReadableStream({
     start(controller) {
       // 연결 성공 메시지
@@ -13,7 +15,7 @@ export async function GET(request: NextRequest) {
       );
 
       // 파일 변경 이벤트 구독
-      const unsubscribe = fileWatcher.subscribe((event: FileChangeEvent) => {
+      unsubscribe = fileWatcher.subscribe((event: FileChangeEvent) => {
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
@@ -24,10 +26,13 @@ export async function GET(request: NextRequest) {
       });
 
       // 연결이 종료되면 정리
-      request.signal.addEventListener('abort', () => {
-        unsubscribe();
-      });
+      const onAbort = () => {
+        unsubscribe?.();
+        request.signal.removeEventListener('abort', onAbort);
+      };
+      request.signal.addEventListener('abort', onAbort);
     },
+    cancel() { unsubscribe?.(); },
   });
 
   return new Response(stream, {

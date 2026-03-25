@@ -164,7 +164,7 @@ export default function AIAssistant({
       if (res.ok && data.filePath) {
         const reviewPath = data.filePath.replace(/\\/g, '/');
         // 단일 명령으로 Claude Code에 리뷰 파일을 전달
-        onOpenTerminal(`cat "${reviewPath}" | claude`);
+        onOpenTerminal(`type "${reviewPath.replace(/\//g, '\\')}" | claude`);
       }
     } catch {
       // fallback: 클립보드 복사 안내

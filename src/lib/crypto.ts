@@ -17,7 +17,7 @@ function getEncryptionKey(): Buffer {
 
   // Generate new key on first run
   const key = crypto.randomBytes(32);
-  fs.writeFileSync(KEY_PATH, key.toString('hex'), 'utf-8');
+  fs.writeFileSync(KEY_PATH, key.toString('hex'), { encoding: 'utf-8', mode: 0o600 });
   return key;
 }
 

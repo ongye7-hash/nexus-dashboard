@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { validateProjectPath } from '@/lib/path-validator';
 
 interface SearchResult {
   projectName: string;
@@ -64,7 +65,10 @@ export async function POST(request: Request) {
 
     // 프로젝트 경로들에서 검색
     for (const projectPath of projectPaths) {
-      if (!fs.existsSync(projectPath)) continue;
+      const validation = validateProjectPath(projectPath);
+      if (!validation.isValid || !validation.sanitizedPath) continue;
+      const validatedPath = validation.sanitizedPath;
+      if (!fs.existsSync(validatedPath)) continue;
       projectsSearched++;
 
       const projectName = path.basename(projectPath);
@@ -75,26 +79,31 @@ export async function POST(request: Request) {
 
         try {
           // ripgrep 시도 (더 빠름)
-          const rgFlags = [
+          const rgArgs = [
             '-n', // 줄 번호
             '--no-heading',
             '-H', // 파일명 표시
-            caseSensitive ? '' : '-i',
-            wholeWord ? '-w' : '',
-            `--max-count=20`, // 파일당 최대 20개
+            ...(caseSensitive ? [] : ['-i']),
+            ...(wholeWord ? ['-w'] : []),
+            '--max-count=20', // 파일당 최대 20개
             ...EXCLUDED_DIRS.map(d => `--glob=!${d}`),
-          ].filter(Boolean).join(' ');
+            query,
+            validatedPath,
+          ];
 
-          searchOutput = execSync(
-            `rg ${rgFlags} "${query.replace(/"/g, '\\"')}" "${projectPath}"`,
+          searchOutput = execFileSync('rg', rgArgs,
             { encoding: 'utf-8', timeout: 10000, maxBuffer: 5 * 1024 * 1024, windowsHide: true }
           );
         } catch {
           // ripgrep 없으면 findstr 사용 (Windows)
-          const findstrFlags = caseSensitive ? '/N' : '/N /I';
+          const findstrArgs = [
+            ...(caseSensitive ? ['/N'] : ['/N', '/I']),
+            '/S', '/P',
+            query,
+            `${validatedPath}\\*.*`,
+          ];
           try {
-            searchOutput = execSync(
-              `findstr ${findstrFlags} /S /P "${query}" "${projectPath}\\*.*"`,
+            searchOutput = execFileSync('findstr', findstrArgs,
               { encoding: 'utf-8', timeout: 15000, maxBuffer: 5 * 1024 * 1024, windowsHide: true }
             );
           } catch {

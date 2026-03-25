@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { validateProjectPath } from '@/lib/path-validator';
 
 const execAsync = promisify(exec);
 
@@ -93,15 +94,26 @@ export async function POST(request: Request) {
     const results: RoutineResult[] = [];
 
     for (const project of projects) {
+      const validation = validateProjectPath(project.path);
+      if (!validation.isValid || !validation.sanitizedPath) {
+        results.push({
+          projectName: project.name,
+          projectPath: project.path,
+          steps: [{ name: 'validation', status: 'error', message: validation.error || 'Invalid path' }],
+        });
+        continue;
+      }
+      const validatedPath = validation.sanitizedPath;
+
       const result: RoutineResult = {
         projectName: project.name,
-        projectPath: project.path,
+        projectPath: validatedPath,
         steps: [],
       };
 
       // Git Pull
       if (enabledActions.gitPull) {
-        const gitResult = await runGitPull(project.path);
+        const gitResult = await runGitPull(validatedPath);
         result.steps.push({
           name: 'git pull',
           status: gitResult.status,
@@ -112,7 +124,7 @@ export async function POST(request: Request) {
 
       // npm install
       if (enabledActions.npmInstall) {
-        const npmResult = await runNpmInstall(project.path);
+        const npmResult = await runNpmInstall(validatedPath);
         result.steps.push({
           name: 'npm install',
           status: npmResult.status,

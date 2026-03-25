@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSetting, getAllGitHubRepos, upsertGitHubRepo, linkGitHubRepoToLocal, unlinkGitHubRepo } from '@/lib/database';
+import { decrypt } from '@/lib/crypto';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -45,9 +46,15 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const refresh = searchParams.get('refresh') === 'true';
 
-    const token = getSetting('github_token');
-    if (!token) {
+    const encryptedToken = getSetting('github_token');
+    if (!encryptedToken) {
       return NextResponse.json({ error: 'GitHub not authenticated' }, { status: 401 });
+    }
+    let token: string;
+    try {
+      token = decrypt(encryptedToken);
+    } catch {
+      return NextResponse.json({ error: 'Token invalid' }, { status: 401 });
     }
 
     if (refresh) {

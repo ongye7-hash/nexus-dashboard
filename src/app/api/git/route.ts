@@ -202,9 +202,10 @@ export async function POST(request: Request) {
         if (addResult === null) {
           return NextResponse.json({ error: 'Failed to stage changes' }, { status: 500 });
         }
-        // Commit - need to use execSync directly for message with special chars
+        // Commit - use execFileSync to prevent command injection
         try {
-          execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+          const { execFileSync } = require('child_process');
+          execFileSync('git', ['commit', '-m', message], {
             cwd: safePath,
             encoding: 'utf-8',
             timeout: 10000,

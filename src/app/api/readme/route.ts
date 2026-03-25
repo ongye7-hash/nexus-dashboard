@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { validateProjectPath } from '@/lib/path-validator';
 
 const README_NAMES = [
   'README.md',
@@ -20,8 +21,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Path is required' }, { status: 400 });
     }
 
-    if (!fs.existsSync(projectPath)) {
-      return NextResponse.json({ error: 'Path does not exist' }, { status: 404 });
+    const validation = validateProjectPath(projectPath);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     // Find README file
@@ -29,7 +31,7 @@ export async function GET(request: Request) {
     let readmeName: string | null = null;
 
     for (const name of README_NAMES) {
-      const fullPath = path.join(projectPath, name);
+      const fullPath = path.join(validation.sanitizedPath!, name);
       if (fs.existsSync(fullPath)) {
         readmePath = fullPath;
         readmeName = name;

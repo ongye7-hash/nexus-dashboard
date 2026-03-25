@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getSetting, setSetting, deleteSetting } from '@/lib/database';
+import { encrypt, decrypt } from '@/lib/crypto';
 
 export async function GET() {
   try {
-    const token = getSetting('github_token');
-    if (!token) {
+    const encryptedToken = getSetting('github_token');
+    if (!encryptedToken) {
       return NextResponse.json({ authenticated: false });
+    }
+    let token: string;
+    try {
+      token = decrypt(encryptedToken);
+    } catch {
+      return NextResponse.json({ authenticated: false, error: 'Token decrypt failed' });
     }
 
     // Verify token by fetching user info
@@ -59,7 +66,7 @@ export async function POST(request: Request) {
         }
 
         const user = await res.json();
-        setSetting('github_token', token);
+        setSetting('github_token', encrypt(token));
         setSetting('github_username', user.login);
 
         return NextResponse.json({

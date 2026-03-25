@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { validateProjectPath } from '@/lib/path-validator';
 
 const IGNORED_FOLDERS = [
   'node_modules',
@@ -93,11 +94,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Path is required' }, { status: 400 });
     }
 
-    if (!fs.existsSync(projectPath)) {
-      return NextResponse.json({ error: 'Path does not exist' }, { status: 404 });
+    const validation = validateProjectPath(projectPath);
+    if (!validation.isValid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const tree = getFileTree(projectPath);
+    const tree = getFileTree(validation.sanitizedPath!);
 
     return NextResponse.json({ tree });
   } catch (error) {

@@ -54,6 +54,7 @@ export async function GET() {
       if (parts.length >= 5) {
         const localAddress = parts[1];
         const pid = parseInt(parts[4], 10);
+        if (!Number.isInteger(pid) || pid <= 0) continue;
 
         // 포트 추출
         const portMatch = localAddress.match(/:(\d+)$/);
@@ -132,6 +133,14 @@ export async function GET() {
     console.error('프로세스 목록 조회 실패:', error);
   }
 
+  // 미사용 포트 매핑 정리
+  const listeningPorts = new Set(processes.map(p => p.port));
+  for (const mapping of portMappings) {
+    if (!listeningPorts.has(mapping.port)) {
+      clearPortMapping(mapping.project_path);
+    }
+  }
+
   return NextResponse.json({ processes });
 }
 
@@ -141,15 +150,23 @@ export async function POST(request: Request) {
 
     if (action === 'kill') {
       if (pid) {
-        execSync(`taskkill /PID ${pid} /F`, { windowsHide: true });
+        const safePid = parseInt(String(pid), 10);
+        if (!Number.isInteger(safePid) || safePid <= 0) {
+          return NextResponse.json({ error: '유효하지 않은 PID' }, { status: 400 });
+        }
+        execSync(`taskkill //PID ${safePid} //F`, { windowsHide: true });
         // 프로젝트 경로가 있으면 포트 매핑 정리
         if (projectPath) {
           clearPortMapping(projectPath);
         }
-        return NextResponse.json({ success: true, message: `PID ${pid} 프로세스를 종료했습니다` });
+        return NextResponse.json({ success: true, message: `PID ${safePid} 프로세스를 종료했습니다` });
       } else if (port) {
+        const safePort = parseInt(String(port), 10);
+        if (!Number.isInteger(safePort) || safePort <= 0 || safePort > 65535) {
+          return NextResponse.json({ error: '유효하지 않은 포트' }, { status: 400 });
+        }
         // 포트로 PID 찾아서 종료
-        const output = execSync(`netstat -ano | findstr :${port}`, {
+        const output = execSync(`netstat -ano | findstr :${safePort}`, {
           encoding: 'utf-8',
           windowsHide: true,
         });
@@ -157,7 +174,7 @@ export async function POST(request: Request) {
         if (lines.length > 0) {
           const parts = lines[0].trim().split(/\s+/);
           const targetPid = parseInt(parts[parts.length - 1], 10);
-          execSync(`taskkill /PID ${targetPid} /F`, { windowsHide: true });
+          execSync(`taskkill //PID ${targetPid} //F`, { windowsHide: true });
           // 프로젝트 경로가 있으면 포트 매핑 정리
           if (projectPath) {
             clearPortMapping(projectPath);
