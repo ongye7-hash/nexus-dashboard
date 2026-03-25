@@ -8,6 +8,8 @@ import {
   Server,
   Bot,
   FolderOpen,
+  Download,
+  Upload,
 } from 'lucide-react';
 import GitHubTab from './settings/GitHubTab';
 import VPSTab from './settings/VPSTab';
@@ -102,6 +104,53 @@ export function SettingsModal({ open, onClose, initialTab = 'github' }: Settings
                 {activeTab === 'vps' && <VPSTab />}
                 {activeTab === 'ai' && <AITab />}
                 {activeTab === 'paths' && <ScanPathsTab />}
+              </div>
+
+              {/* 설정 내보내기/가져오기 */}
+              <div className="border-t border-[#27272a] p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      window.open('/api/settings/export', '_blank');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    설정 내보내기
+                  </button>
+                  <label className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs text-zinc-300 transition-colors cursor-pointer">
+                    <Upload className="w-3 h-3" />
+                    설정 가져오기
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const text = await file.text();
+                          const res = await fetch('/api/settings/import', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: text,
+                          });
+                          const result = await res.json();
+                          if (res.ok) {
+                            alert(`${result.restored}개 설정이 복원되었습니다. 새로고침합니다.`);
+                            window.location.reload();
+                          } else {
+                            alert(result.error || '가져오기 실패');
+                          }
+                        } catch {
+                          alert('유효하지 않은 파일입니다');
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+                <span className="text-[10px] text-zinc-600">암호화된 키는 이 PC에서만 복원 가능</span>
               </div>
             </div>
           </motion.div>
