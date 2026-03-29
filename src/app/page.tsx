@@ -107,8 +107,8 @@ export default function Home() {
         return;
       }
 
-      // 모달이나 팔레트가 열려있으면 다른 단축키 무시
-      if (selectedProject || commandOpen || groupManagerOpen) return;
+      // 모달, 팔레트, AI 채팅이 열려있으면 다른 단축키 무시
+      if (selectedProject || commandOpen || groupManagerOpen || activeFilter === 'ai-chat') return;
 
       // Cmd/Ctrl + K: 커맨드 팔레트
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
