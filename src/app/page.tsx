@@ -191,7 +191,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandOpen, selectedProject, sidebarOpen, groupManagerOpen]);
+  }, [commandOpen, selectedProject, sidebarOpen, groupManagerOpen, activeFilter]);
 
   const handleRefresh = () => {
     setRefreshing(true);
