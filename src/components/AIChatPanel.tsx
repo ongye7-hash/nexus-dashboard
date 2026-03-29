@@ -96,7 +96,17 @@ export function AIChatPanel() {
     try {
       const res = await fetch(`/api/ai/chat/sessions/${sessionId}`);
       const data = await res.json();
-      setMessages(data.messages || []);
+      // tool_use/tool_result JSON 메시지는 UI에 표시하지 않음
+      const filtered = (data.messages || []).filter((m: ChatMessage) => {
+        try {
+          const parsed = JSON.parse(m.content);
+          if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].type === 'tool_use' || parsed[0].type === 'tool_result')) {
+            return false;
+          }
+        } catch { /* plain text — 표시 */ }
+        return true;
+      });
+      setMessages(filtered);
       setActiveSessionId(sessionId);
       setSelectedProjectPath(data.session?.project_path || null);
       setShowSessions(false);
