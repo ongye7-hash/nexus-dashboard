@@ -12,6 +12,7 @@ import {
   User,
   ChevronLeft,
   X,
+  FolderOpen,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -31,6 +32,15 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface RegisteredProject {
+  path: string;
+  name: string;
+  deployType?: string;
+  tags?: string;
+  notes?: string;
+  deployUrl?: string;
+}
+
 export function AIChatPanel() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -40,6 +50,8 @@ export function AIChatPanel() {
   const [streamText, setStreamText] = useState('');
   const [showSessions, setShowSessions] = useState(true);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
+  const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -59,13 +71,24 @@ export function AIChatPanel() {
     }
   }, []);
 
+  // 등록된 프로젝트 목록 로드
+  const fetchRegisteredProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects?registered=true');
+      const data = await res.json();
+      setRegisteredProjects(data.projects || []);
+    } catch (error) {
+      console.error('등록된 프로젝트 로드 실패:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSessions();
+    fetchRegisteredProjects();
     return () => {
-      // 컴포넌트 언마운트 시 진행 중인 스트리밍 중단
       abortRef.current?.abort();
     };
-  }, [fetchSessions]);
+  }, [fetchSessions, fetchRegisteredProjects]);
 
   // 세션 메시지 로드
   const loadSession = useCallback(async (sessionId: string) => {
@@ -74,6 +97,7 @@ export function AIChatPanel() {
       const data = await res.json();
       setMessages(data.messages || []);
       setActiveSessionId(sessionId);
+      setSelectedProjectPath(data.session?.project_path || null);
       setShowSessions(false);
     } catch (error) {
       console.error('세션 로드 실패:', error);
@@ -90,6 +114,7 @@ export function AIChatPanel() {
     setActiveSessionId(null);
     setMessages([]);
     setStreamText('');
+    setSelectedProjectPath(null);
     setShowSessions(false);
     setTimeout(() => inputRef.current?.focus(), 100);
   };
@@ -136,6 +161,7 @@ export function AIChatPanel() {
         body: JSON.stringify({
           sessionId: activeSessionId,
           message: trimmed,
+          projectPath: selectedProjectPath,
         }),
         signal: controller.signal,
       });
@@ -350,14 +376,34 @@ export function AIChatPanel() {
               }
             </span>
           </div>
-          {!activeSessionId && !showSessions && (
-            <button
-              onClick={() => setShowSessions(true)}
-              className="ml-auto text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              대화 목록
-            </button>
-          )}
+          {/* 프로젝트 선택 드롭다운 */}
+          <div className="ml-auto flex items-center gap-2">
+            {registeredProjects.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <FolderOpen className="w-3.5 h-3.5 text-zinc-500" />
+                <select
+                  value={selectedProjectPath || ''}
+                  onChange={e => setSelectedProjectPath(e.target.value || null)}
+                  disabled={!!activeSessionId}
+                  className="h-7 px-2 bg-[#18181b] border border-[#27272a] rounded-lg text-xs text-zinc-300 outline-none focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed max-w-[200px]"
+                  title={activeSessionId ? '기존 대화의 프로젝트는 변경할 수 없습니다' : '프로젝트 선택'}
+                >
+                  <option value="">전체 프로젝트</option>
+                  {registeredProjects.map(p => (
+                    <option key={p.path} value={p.path}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {!activeSessionId && !showSessions && (
+              <button
+                onClick={() => setShowSessions(true)}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                대화 목록
+              </button>
+            )}
+          </div>
         </div>
 
         {/* 메시지 영역 */}

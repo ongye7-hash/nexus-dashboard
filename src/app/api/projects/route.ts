@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -202,8 +202,22 @@ function loadAllMeta(): Record<string, any> {
 
 
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // 등록된 프로젝트만 반환 (AI 채팅 컨텍스트용)
+    if (request.nextUrl.searchParams.get('registered') === 'true') {
+      const registered = getRegisteredProjects();
+      const list = registered.map(p => ({
+        path: p.project_path,
+        name: path.basename(p.project_path),
+        deployType: p.deploy_type,
+        tags: p.tags,
+        notes: p.notes,
+        deployUrl: p.deploy_url,
+      }));
+      return NextResponse.json({ projects: list });
+    }
+
     const scanPaths = getScanPaths();
     const meta = loadAllMeta();
     const projects: Project[] = [];

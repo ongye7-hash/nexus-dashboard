@@ -1,14 +1,82 @@
 import { NextRequest } from 'next/server';
+import path from 'path';
 import { getDb } from '@/lib/db';
-import { getSetting } from '@/lib/database';
+import { getSetting, getRegisteredProjects, getDeployTargets } from '@/lib/database';
 import { decrypt } from '@/lib/crypto';
 import crypto from 'crypto';
 
 const CHAT_MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 4096;
-const SYSTEM_PROMPT = `너는 Nexus 대시보드의 프로젝트 관리자다. 등록된 프로젝트들의 상태를 파악하고 개발 관련 질문에 답변한다.
+
+const BASE_SYSTEM_PROMPT = `너는 Nexus 대시보드의 프로젝트 관리자이자 시니어 개발자다.
+등록된 프로젝트들의 상태를 파악하고 개발 관련 질문에 답변한다.
 항상 한국어로 응답하고, 마크다운 포맷을 활용하라. 코드 블록에는 언어 태그를 붙여라.
-간결하고 실용적으로 답변하라.`;
+간결하고 실용적으로 답변하라.
+사용자의 질문에 프로젝트 컨텍스트를 활용해서 답변하되, 구체적인 API키나 비밀번호는 절대 응답에 포함하지 마.`;
+
+// credential 키 패턴 — config JSON에서 제거할 필드
+const CREDENTIAL_KEYS = /^(token|key|secret|password|credential|api_key|apikey|auth)$/i;
+
+function sanitizeConfig(configStr: string | null): Record<string, unknown> {
+  if (!configStr) return {};
+  try {
+    const config = JSON.parse(configStr);
+    const safe: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(config)) {
+      if (!CREDENTIAL_KEYS.test(k)) {
+        safe[k] = v;
+      }
+    }
+    return safe;
+  } catch {
+    return {};
+  }
+}
+
+function buildSystemPrompt(projectPath?: string | null): string {
+  try {
+    const registered = getRegisteredProjects();
+    if (registered.length === 0) return BASE_SYSTEM_PROMPT;
+
+    // projectPath가 있으면 해당 프로젝트만, 없으면 전체
+    const targets = projectPath
+      ? registered.filter(p => p.project_path === projectPath)
+      : registered;
+
+    if (targets.length === 0) return BASE_SYSTEM_PROMPT;
+
+    const projectBlocks = targets.map((proj, i) => {
+      const name = path.basename(proj.project_path);
+      const deployTargets = getDeployTargets(proj.project_path);
+      const tags = proj.tags ? proj.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ') : '';
+
+      let block = `[프로젝트 ${i + 1}: ${name}]`;
+      if (proj.deploy_type) block += `\n  배포 방식: ${proj.deploy_type}`;
+      if (tags) block += `\n  태그: ${tags}`;
+      if (proj.notes) block += `\n  메모: ${proj.notes}`;
+      if (proj.deploy_url) block += `\n  URL: ${proj.deploy_url}`;
+
+      for (const dt of deployTargets) {
+        const safeConfig = sanitizeConfig(dt.config ?? null);
+        const configUrl = safeConfig.url || safeConfig.domain || '';
+        block += `\n  배포 타겟: ${dt.name} (${dt.type})`;
+        if (configUrl) block += ` — ${configUrl}`;
+        if (dt.status && dt.status !== 'unknown') block += ` [${dt.status}]`;
+      }
+
+      return block;
+    });
+
+    return `${BASE_SYSTEM_PROMPT}
+
+아래는 현재 등록된 프로젝트 목록이다:
+
+${projectBlocks.join('\n\n')}`;
+  } catch (error) {
+    console.warn('프로젝트 컨텍스트 빌드 실패:', error);
+    return BASE_SYSTEM_PROMPT;
+  }
+}
 
 function getApiKey(): string | null {
   const encrypted = getSetting('claude_api_key');
@@ -60,6 +128,7 @@ export async function POST(request: NextRequest) {
 
     const db = getDb();
     let currentSessionId = sessionId;
+    let resolvedProjectPath = projectPath || null;
 
     // 새 세션 생성 (sessionId 없을 때)
     if (!currentSessionId) {
@@ -67,7 +136,11 @@ export async function POST(request: NextRequest) {
       const title = generateTitle(message);
       db.prepare(
         'INSERT INTO chat_sessions (id, title, project_path, model, created_at, updated_at) VALUES (?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
-      ).run(currentSessionId, title, projectPath || null, CHAT_MODEL);
+      ).run(currentSessionId, title, resolvedProjectPath, CHAT_MODEL);
+    } else {
+      // 기존 세션이면 DB에서 project_path 읽기
+      const session = db.prepare('SELECT project_path FROM chat_sessions WHERE id = ?').get(currentSessionId) as { project_path: string | null } | undefined;
+      if (session) resolvedProjectPath = session.project_path;
     }
 
     // 사용자 메시지 저장
@@ -91,7 +164,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: CHAT_MODEL,
         max_tokens: MAX_TOKENS,
-        system: SYSTEM_PROMPT,
+        system: buildSystemPrompt(resolvedProjectPath),
         stream: true,
         messages: history.map(m => ({ role: m.role, content: m.content })),
       }),
