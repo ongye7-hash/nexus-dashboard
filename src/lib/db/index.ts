@@ -229,6 +229,19 @@ function initializeTables() {
     )
   `);
 
+  // 도구 실행 승인 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS tool_approvals (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      tool_input TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      resolved_at TEXT
+    )
+  `);
+
   // project_meta 확장 컬럼 (기존 테이블에 안전하게 추가)
   const columns = database.prepare("PRAGMA table_info(project_meta)").all() as { name: string }[];
   const colNames = new Set(columns.map(c => c.name));

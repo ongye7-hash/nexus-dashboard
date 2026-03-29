@@ -3,7 +3,7 @@ import path from 'path';
 import { getDb } from '@/lib/db';
 import { getSetting, getRegisteredProjects, getDeployTargets } from '@/lib/database';
 import { decrypt } from '@/lib/crypto';
-import { getToolSchemas, executeTool } from '@/lib/ai/tools';
+import { getToolSchemas, executeTool, getToolPermission } from '@/lib/ai/tools';
 import crypto from 'crypto';
 
 const CHAT_MODEL = 'claude-sonnet-4-6';
@@ -207,6 +207,10 @@ export async function POST(request: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         };
 
+        let aborted = false;
+        // 클라이언트 연결 끊김 감지
+        request.signal.addEventListener('abort', () => { aborted = true; });
+
         try {
           // 세션 ID를 첫 이벤트로 전송
           send({ type: 'session', sessionId: currentSessionId });
@@ -253,13 +257,56 @@ export async function POST(request: NextRequest) {
               const toolName = String(block.name);
               const toolInput = (block.input || {}) as Record<string, unknown>;
               const toolUseId = String(block.id);
+              const permission = getToolPermission(toolName);
 
-              // 프론트에 도구 실행 알림
-              send({ type: 'tool_call', name: toolName, status: 'running' });
+              let toolResult: string;
 
-              const toolResult = await executeTool(toolName, toolInput);
+              if (permission === 'write') {
+                // 쓰기 도구 → 사용자 승인 필요
+                const approvalId = crypto.randomUUID();
+                db.prepare(
+                  'INSERT INTO tool_approvals (id, session_id, tool_name, tool_input, status, created_at) VALUES (?, ?, ?, ?, \'pending\', datetime(\'now\'))'
+                ).run(approvalId, currentSessionId, toolName, JSON.stringify(toolInput));
 
-              send({ type: 'tool_call', name: toolName, status: 'complete' });
+                send({ type: 'approval_required', approvalId, toolName, toolInput });
+
+                // 폴링 루프 (60초, 1초 간격)
+                const APPROVAL_TIMEOUT = 60;
+                let approved = false;
+                let rejected = false;
+
+                for (let i = 0; i < APPROVAL_TIMEOUT; i++) {
+                  if (aborted) break;
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  const row = db.prepare('SELECT status FROM tool_approvals WHERE id = ?').get(approvalId) as { status: string } | undefined;
+                  if (row?.status === 'approved') { approved = true; break; }
+                  if (row?.status === 'rejected') { rejected = true; break; }
+                }
+
+                if (approved) {
+                  send({ type: 'tool_call', name: toolName, status: 'running' });
+                  toolResult = await executeTool(toolName, toolInput);
+                  send({ type: 'tool_call', name: toolName, status: 'complete' });
+
+                  // 실행 완료 기록
+                  db.prepare('UPDATE tool_approvals SET status = \'executed\', resolved_at = datetime(\'now\') WHERE id = ?').run(approvalId);
+                } else if (rejected) {
+                  toolResult = `사용자가 ${toolName} 실행을 거부했습니다.`;
+                  send({ type: 'tool_call', name: toolName, status: 'rejected' });
+                } else {
+                  // 타임아웃 또는 클라이언트 연결 끊김
+                  db.prepare('UPDATE tool_approvals SET status = \'timeout\', resolved_at = datetime(\'now\') WHERE id = ?').run(approvalId);
+                  toolResult = aborted
+                    ? `${toolName} 실행이 취소되었습니다 (연결 끊김).`
+                    : `${toolName} 실행 승인 시간이 초과되었습니다 (60초).`;
+                  send({ type: 'tool_call', name: toolName, status: 'timeout' });
+                }
+              } else {
+                // 읽기 도구 → 즉시 실행
+                send({ type: 'tool_call', name: toolName, status: 'running' });
+                toolResult = await executeTool(toolName, toolInput);
+                send({ type: 'tool_call', name: toolName, status: 'complete' });
+              }
 
               toolResults.push({
                 type: 'tool_result',

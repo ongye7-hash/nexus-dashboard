@@ -324,6 +324,154 @@ const gitStatusTool: Tool = {
   },
 };
 
+// ============ 쓰기 도구 ============
+
+// 7. service_restart — PM2/Docker 서비스 재시작
+const serviceRestartTool: Tool = {
+  name: 'service_restart',
+  description: 'VPS에서 Docker 컨테이너 또는 PM2 프로세스를 재시작한다. 사용자 승인이 필요하다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      type: { type: 'string', enum: ['docker', 'pm2'], description: '서비스 타입' },
+      target: { type: 'string', description: '컨테이너/프로세스 이름' },
+      serverId: { type: 'string', description: 'VPS 서버 ID (생략 시 첫 번째 서버)' },
+    },
+    required: ['type', 'target'],
+  },
+  permission: 'write',
+  async execute(input) {
+    const serviceType = String(input.type || '');
+    const target = String(input.target || '').trim();
+
+    if (!['docker', 'pm2'].includes(serviceType)) return '오류: type은 docker 또는 pm2만 허용됩니다.';
+    if (!target) return '오류: target이 필요합니다.';
+    if (!/^[a-zA-Z0-9_.\-]+$/.test(target)) return '오류: 유효하지 않은 대상 이름입니다.';
+
+    const servers = getAllVPSServers();
+    if (servers.length === 0) return '등록된 VPS 서버가 없습니다.';
+    const serverId = input.serverId ? String(input.serverId) : servers[0].id;
+    const server = getVPSServer(serverId);
+    if (!server) return `서버 ${serverId}를 찾을 수 없습니다.`;
+
+    const cmd = serviceType === 'docker'
+      ? `docker restart ${target}`
+      : `pm2 restart ${target}`;
+
+    let conn;
+    try {
+      conn = await connectSSH(server);
+      const output = await sshExec(conn, cmd, 30000);
+      return `[${serviceType} restart ${target}] 완료\n${output}`;
+    } catch (error) {
+      return `재시작 실패: ${error instanceof Error ? error.message : 'unknown'}`;
+    } finally {
+      if (conn) try { conn.end(); } catch { /* 연결 종료 실패 무시 */ }
+    }
+  },
+};
+
+// 8. deploy_trigger — 배포 트리거 (git pull + rebuild)
+const deployTriggerTool: Tool = {
+  name: 'deploy_trigger',
+  description: 'VPS에서 프로젝트를 배포한다 (git pull + docker compose up --build). 사용자 승인이 필요하다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      projectDir: { type: 'string', description: '서버 내 프로젝트 디렉토리 (예: /root/nexus-dashboard)' },
+      serverId: { type: 'string', description: 'VPS 서버 ID (생략 시 첫 번째 서버)' },
+    },
+    required: ['projectDir'],
+  },
+  permission: 'write',
+  async execute(input) {
+    const projectDir = String(input.projectDir || '').trim();
+    if (!projectDir) return '오류: projectDir이 필요합니다.';
+
+    // 보안: /root/ 또는 /home/으로 시작하는 절대경로만 허용
+    if (projectDir.includes('..')) return '오류: 경로에 .. 가 포함될 수 없습니다.';
+    if (/[;&|`$(){}]/.test(projectDir)) return '오류: 경로에 허용되지 않은 문자가 포함되어 있습니다.';
+    if (!/^\/(?:root|home\/[a-zA-Z0-9_-]+)\/[a-zA-Z0-9_.\-/]+$/.test(projectDir)) {
+      return '오류: 유효하지 않은 프로젝트 경로입니다. /root/ 또는 /home/user/ 하위만 허용됩니다.';
+    }
+
+    const servers = getAllVPSServers();
+    if (servers.length === 0) return '등록된 VPS 서버가 없습니다.';
+    const serverId = input.serverId ? String(input.serverId) : servers[0].id;
+    const server = getVPSServer(serverId);
+    if (!server) return `서버 ${serverId}를 찾을 수 없습니다.`;
+
+    // deploy 디렉토리가 있으면 deploy/, 없으면 프로젝트 루트
+    const deployCmd = [
+      `cd ${projectDir}`,
+      'git pull origin master',
+      `if [ -d "deploy" ]; then cd deploy && docker compose -f docker-compose.prod.yml up -d --build; else docker compose up -d --build; fi`,
+    ].join(' && ');
+
+    let conn;
+    try {
+      conn = await connectSSH(server);
+      const output = await sshExec(conn, deployCmd, 300000); // 5분 타임아웃
+      return `[배포 완료: ${projectDir}]\n${output.slice(-2000)}`; // 마지막 2000자만
+    } catch (error) {
+      return `배포 실패: ${error instanceof Error ? error.message : 'unknown'}`;
+    } finally {
+      if (conn) try { conn.end(); } catch { /* 연결 종료 실패 무시 */ }
+    }
+  },
+};
+
+// 9. n8n_workflow_toggle — n8n 워크플로우 활성화/비활성화
+const n8nWorkflowToggleTool: Tool = {
+  name: 'n8n_workflow_toggle',
+  description: 'n8n 워크플로우를 활성화하거나 비활성화한다. 사용자 승인이 필요하다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      workflowId: { type: 'string', description: '워크플로우 ID (숫자)' },
+      active: { type: 'boolean', description: 'true=활성화, false=비활성화' },
+    },
+    required: ['workflowId', 'active'],
+  },
+  permission: 'write',
+  async execute(input) {
+    const workflowId = String(input.workflowId || '').trim();
+    const active = Boolean(input.active);
+
+    if (!workflowId || !/^\d+$/.test(workflowId)) return '오류: workflowId는 숫자여야 합니다.';
+
+    const encryptedKey = getSetting('n8n_api_key');
+    if (!encryptedKey) return 'n8n API Key가 설정되지 않았습니다.';
+
+    let apiKey: string;
+    try { apiKey = decrypt(encryptedKey); } catch { return 'n8n API Key 복호화 실패.'; }
+
+    const n8nUrl = getSetting('n8n_url') || 'https://n8n.ongye.org';
+
+    try {
+      const res = await fetch(`${n8nUrl}/api/v1/workflows/${workflowId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-N8N-API-KEY': apiKey,
+        },
+        body: JSON.stringify({ active }),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) return `워크플로우 ${workflowId}를 찾을 수 없습니다.`;
+        return `n8n API 오류: ${res.status} ${res.statusText}`;
+      }
+
+      const data = await res.json();
+      return `워크플로우 "${data.name || workflowId}" ${active ? '활성화' : '비활성화'} 완료.`;
+    } catch (error) {
+      return `n8n API 연결 실패: ${error instanceof Error ? error.message : 'unknown'}`;
+    }
+  },
+};
+
 // ============ Tool Registry ============
 
 export const TOOLS: Tool[] = [
@@ -333,4 +481,13 @@ export const TOOLS: Tool[] = [
   dockerLogsTool,
   n8nExecutionsTool,
   gitStatusTool,
+  serviceRestartTool,
+  deployTriggerTool,
+  n8nWorkflowToggleTool,
 ];
+
+// 도구의 permission 조회
+export function getToolPermission(name: string): 'read' | 'write' | null {
+  const tool = TOOLS.find(t => t.name === name);
+  return tool ? tool.permission : null;
+}

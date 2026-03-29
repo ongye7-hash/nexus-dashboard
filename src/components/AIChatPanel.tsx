@@ -13,6 +13,8 @@ import {
   ChevronLeft,
   X,
   FolderOpen,
+  ShieldAlert,
+  Check,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -53,6 +55,9 @@ export function AIChatPanel() {
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<{ id: string; name: string; input: Record<string, unknown> } | null>(null);
+  const [approvalCountdown, setApprovalCountdown] = useState(0);
+  const approvalTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -88,6 +93,7 @@ export function AIChatPanel() {
     fetchRegisteredProjects();
     return () => {
       abortRef.current?.abort();
+      if (approvalTimerRef.current) clearInterval(approvalTimerRef.current);
     };
   }, [fetchSessions, fetchRegisteredProjects]);
 
@@ -214,6 +220,27 @@ export function AIChatPanel() {
               fetchSessions();
             }
 
+            if (parsed.type === 'approval_required') {
+              setPendingApproval({
+                id: parsed.approvalId,
+                name: parsed.toolName,
+                input: parsed.toolInput || {},
+              });
+              // 60초 카운트다운 시작
+              setApprovalCountdown(60);
+              if (approvalTimerRef.current) clearInterval(approvalTimerRef.current);
+              approvalTimerRef.current = setInterval(() => {
+                setApprovalCountdown(prev => {
+                  if (prev <= 1) {
+                    if (approvalTimerRef.current) clearInterval(approvalTimerRef.current);
+                    setPendingApproval(null);
+                    return 0;
+                  }
+                  return prev - 1;
+                });
+              }, 1000);
+            }
+
             if (parsed.type === 'tool_call') {
               setActiveTools(prev => {
                 const existing = prev.findIndex(t => t.name === parsed.name);
@@ -286,6 +313,23 @@ export function AIChatPanel() {
   };
 
   // 스트리밍 중단
+  // 승인/거부 처리
+  const handleApproval = async (decision: 'approve' | 'reject') => {
+    if (!pendingApproval) return;
+    try {
+      await fetch('/api/ai/chat/approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvalId: pendingApproval.id, decision }),
+      });
+    } catch (error) {
+      console.error('승인 처리 실패:', error);
+    }
+    if (approvalTimerRef.current) clearInterval(approvalTimerRef.current);
+    setPendingApproval(null);
+    setApprovalCountdown(0);
+  };
+
   const handleStop = () => {
     abortRef.current?.abort();
     if (streamText) {
@@ -501,6 +545,46 @@ export function AIChatPanel() {
               <div className="max-w-[75%] rounded-2xl px-4 py-3 bg-[#18181b] border border-[#27272a] text-zinc-200">
                 <div className="prose prose-invert prose-sm max-w-none [&_pre]:bg-[#0f0f10] [&_pre]:border [&_pre]:border-[#27272a] [&_pre]:rounded-lg [&_code]:text-indigo-300 [&_p]:leading-relaxed">
                   <ReactMarkdown>{streamText}</ReactMarkdown>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 승인 요청 모달 */}
+          {pendingApproval && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <ShieldAlert className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="max-w-[75%] rounded-2xl px-4 py-4 bg-[#18181b] border border-amber-500/30 text-zinc-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <ShieldAlert className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-medium text-amber-400">실행 승인 필요</span>
+                  <span className="ml-auto text-xs text-zinc-500 tabular-nums">{approvalCountdown}초</span>
+                </div>
+                <div className="mb-3">
+                  <p className="text-sm text-zinc-300">
+                    <span className="font-mono text-indigo-400">{pendingApproval.name}</span> 도구를 실행하려고 합니다.
+                  </p>
+                  <pre className="mt-2 p-2 bg-[#0f0f10] border border-[#27272a] rounded-lg text-xs text-zinc-400 overflow-x-auto">
+                    {JSON.stringify(pendingApproval.input, null, 2)}
+                  </pre>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleApproval('approve')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded-lg transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    승인
+                  </button>
+                  <button
+                    onClick={() => handleApproval('reject')}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded-lg transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    거부
+                  </button>
                 </div>
               </div>
             </div>
