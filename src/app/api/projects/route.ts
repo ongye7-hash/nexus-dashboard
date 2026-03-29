@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { Project, ProjectType, ProjectStatus } from '@/lib/types';
-import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos, getAllVPSServers, getSetting } from '@/lib/database';
+import { getProjectMeta, getAllProjectMeta, saveProjectMeta, getAllGitHubRepos, getAllVPSServers, getSetting, getRegisteredProjects } from '@/lib/database';
 import { connectSSH, sshExec } from '@/lib/ssh';
 
 function detectLanguageType(language: string | null): ProjectType {
@@ -188,6 +188,8 @@ function loadAllMeta(): Record<string, any> {
         lastOpened: meta.last_opened,
         group: meta.group_id,
         deployUrl: meta.deploy_url,
+        isRegistered: meta.is_registered === 1,
+        deployType: meta.deploy_type,
       };
     }
 
@@ -472,6 +474,57 @@ export async function GET() {
       }
     } catch (error) {
       console.warn('VPS 프로젝트 스캔 실패:', error);
+    }
+
+    // deploy_type 안전 변환
+    const VALID_DEPLOY_TYPES = ['vercel', 'docker', 'pm2', 'static', 'external'] as const;
+    type ValidDeployType = typeof VALID_DEPLOY_TYPES[number];
+    function toDeployType(val: string | undefined): ValidDeployType | undefined {
+      return val && VALID_DEPLOY_TYPES.includes(val as ValidDeployType) ? val as ValidDeployType : undefined;
+    }
+
+    // 수동 등록 프로젝트 머지 (스캔에서 안 잡힌 것만)
+    try {
+      const registered = getRegisteredProjects();
+      const existingPaths = new Set(projects.map(p => p.path.toLowerCase()));
+
+      for (const reg of registered) {
+        if (existingPaths.has(reg.project_path.toLowerCase())) {
+          // 스캔에서 이미 잡힌 프로젝트 — deployType만 추가
+          const existing = projects.find(p => p.path.toLowerCase() === reg.project_path.toLowerCase());
+          if (existing) {
+            existing.isRegistered = true;
+            existing.deployType = toDeployType(reg.deploy_type);
+          }
+          continue;
+        }
+
+        // 스캔에 없는 등록 프로젝트 — Project 객체로 변환
+        const regMeta = meta[reg.project_path] || {};
+        projects.push({
+          id: `reg-${crypto.createHash('md5').update(reg.project_path).digest('hex').slice(0, 12)}`,
+          name: regMeta.description || reg.project_path.split('://').pop() || reg.project_path,
+          path: reg.project_path,
+          type: 'unknown' as ProjectType,
+          lastModified: new Date().toISOString(),
+          lastModifiedRelative: '등록됨',
+          status: (reg.status as ProjectStatus) || 'deployed',
+          description: regMeta.description,
+          techStack: [],
+          hasPackageJson: false,
+          hasGit: false,
+          deployUrl: reg.deploy_url || regMeta.deployUrl,
+          size: 0,
+          fileCount: 0,
+          tags: regMeta.tags || [],
+          pinned: regMeta.pinned || false,
+          group: regMeta.group,
+          isRegistered: true,
+          deployType: toDeployType(reg.deploy_type),
+        });
+      }
+    } catch (error) {
+      console.warn('등록 프로젝트 로드 실패:', error);
     }
 
     // Sort: pinned first, then by last modified

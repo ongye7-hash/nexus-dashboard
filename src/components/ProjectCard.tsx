@@ -18,6 +18,10 @@ import {
   FolderGit2 as GithubIcon,
   GitFork,
   Server,
+  Cloud,
+  Container,
+  Cpu,
+  Link,
 } from 'lucide-react';
 import { Project, PROJECT_TYPE_COLORS, STATUS_COLORS, STATUS_LABELS } from '@/lib/types';
 
@@ -265,6 +269,23 @@ export function ProjectCard({ project, index, onOpen, onRun, onTogglePin }: Proj
               <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
                 <Server className="w-3 h-3" />
                 {project.vpsServerName || 'VPS'}
+              </span>
+            )}
+            {project.deployType && (
+              <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${
+                project.deployType === 'vercel' ? 'bg-blue-500/20 text-blue-400' :
+                project.deployType === 'docker' ? 'bg-cyan-500/20 text-cyan-400' :
+                project.deployType === 'pm2' ? 'bg-green-500/20 text-green-400' :
+                'bg-zinc-500/20 text-zinc-400'
+              }`}>
+                {project.deployType === 'vercel' ? <Cloud className="w-3 h-3" /> :
+                 project.deployType === 'docker' ? <Container className="w-3 h-3" /> :
+                 project.deployType === 'pm2' ? <Cpu className="w-3 h-3" /> :
+                 <Link className="w-3 h-3" />}
+                {project.deployType === 'vercel' ? 'Vercel' :
+                 project.deployType === 'docker' ? 'Docker' :
+                 project.deployType === 'pm2' ? 'PM2' :
+                 project.deployType === 'static' ? 'Static' : 'External'}
               </span>
             )}
             {project.hasPackageJson && (

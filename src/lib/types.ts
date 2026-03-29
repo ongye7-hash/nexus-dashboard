@@ -28,6 +28,8 @@ export interface Project {
   vpsServerName?: string;
   githubActionsStatus?: 'success' | 'failure' | 'pending' | null;
   githubActionsUrl?: string;
+  isRegistered?: boolean;
+  deployType?: 'vercel' | 'docker' | 'pm2' | 'static' | 'external';
 }
 
 export interface ProjectGroup {

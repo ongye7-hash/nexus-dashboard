@@ -7,6 +7,8 @@ export {
   type ProjectMeta, getProjectMeta, getAllProjectMeta, saveProjectMeta,
   type Group, getAllGroups, saveGroup, deleteGroup,
   type PortMapping, getPortMappings, savePortMapping, clearPortMapping,
+  getRegisteredProjects,
+  type DeployTarget, getDeployTargets, saveDeployTarget, deleteDeployTarget, deleteDeployTargetsByProject,
 } from './db/projects';
 
 export {

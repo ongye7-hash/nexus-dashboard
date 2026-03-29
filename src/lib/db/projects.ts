@@ -11,6 +11,18 @@ export interface ProjectMeta {
   last_opened?: string;
   group_id?: string;
   deploy_url?: string;
+  is_registered?: number;
+  deploy_type?: string;
+}
+
+export interface DeployTarget {
+  id: string;
+  project_path: string;
+  type: string;
+  name: string;
+  config?: string;
+  last_deployed_at?: string;
+  status?: string;
 }
 
 export function getProjectMeta(projectPath: string): ProjectMeta | undefined {
@@ -39,6 +51,8 @@ export function saveProjectMeta(meta: Partial<ProjectMeta> & { project_path: str
     if (meta.last_opened !== undefined) { updates.push('last_opened = ?'); values.push(meta.last_opened); }
     if (meta.group_id !== undefined) { updates.push('group_id = ?'); values.push(meta.group_id); }
     if (meta.deploy_url !== undefined) { updates.push('deploy_url = ?'); values.push(meta.deploy_url); }
+    if (meta.is_registered !== undefined) { updates.push('is_registered = ?'); values.push(meta.is_registered); }
+    if (meta.deploy_type !== undefined) { updates.push('deploy_type = ?'); values.push(meta.deploy_type); }
 
     if (updates.length > 0) {
       updates.push('updated_at = CURRENT_TIMESTAMP');
@@ -47,8 +61,8 @@ export function saveProjectMeta(meta: Partial<ProjectMeta> & { project_path: str
     }
   } else {
     db.prepare(`
-      INSERT INTO project_meta (project_path, notes, tags, status, pinned, last_opened, group_id, deploy_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO project_meta (project_path, notes, tags, status, pinned, last_opened, group_id, deploy_url, is_registered, deploy_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       meta.project_path,
       meta.notes || null,
@@ -57,7 +71,9 @@ export function saveProjectMeta(meta: Partial<ProjectMeta> & { project_path: str
       meta.pinned || 0,
       meta.last_opened || null,
       meta.group_id || null,
-      meta.deploy_url || null
+      meta.deploy_url || null,
+      meta.is_registered || 0,
+      meta.deploy_type || null
     );
   }
 }
@@ -123,4 +139,44 @@ export function savePortMapping(projectPath: string, port: number) {
 export function clearPortMapping(projectPath: string) {
   const db = getDb();
   db.prepare('DELETE FROM port_mappings WHERE project_path = ?').run(projectPath);
+}
+
+// ============ 등록 프로젝트 ============
+
+export function getRegisteredProjects(): ProjectMeta[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM project_meta WHERE is_registered = 1').all() as ProjectMeta[];
+}
+
+// ============ 배포 타겟 ============
+
+export function getDeployTargets(projectPath: string): DeployTarget[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM deploy_targets WHERE project_path = ?').all(projectPath) as DeployTarget[];
+}
+
+export function saveDeployTarget(target: DeployTarget) {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR REPLACE INTO deploy_targets (id, project_path, type, name, config, last_deployed_at, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    target.id,
+    target.project_path,
+    target.type,
+    target.name,
+    target.config || null,
+    target.last_deployed_at || null,
+    target.status || 'unknown'
+  );
+}
+
+export function deleteDeployTarget(id: string) {
+  const db = getDb();
+  db.prepare('DELETE FROM deploy_targets WHERE id = ?').run(id);
+}
+
+export function deleteDeployTargetsByProject(projectPath: string) {
+  const db = getDb();
+  db.prepare('DELETE FROM deploy_targets WHERE project_path = ?').run(projectPath);
 }

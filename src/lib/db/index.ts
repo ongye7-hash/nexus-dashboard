@@ -191,4 +191,27 @@ function initializeTables() {
       success INTEGER DEFAULT 0
     )
   `);
+
+  // 배포 타겟 테이블 (프로젝트당 여러 배포 대상)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS deploy_targets (
+      id TEXT PRIMARY KEY,
+      project_path TEXT NOT NULL,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      config TEXT,
+      last_deployed_at TEXT,
+      status TEXT DEFAULT 'unknown'
+    )
+  `);
+
+  // project_meta 확장 컬럼 (기존 테이블에 안전하게 추가)
+  const columns = database.prepare("PRAGMA table_info(project_meta)").all() as { name: string }[];
+  const colNames = new Set(columns.map(c => c.name));
+  if (!colNames.has('is_registered')) {
+    database.exec("ALTER TABLE project_meta ADD COLUMN is_registered INTEGER DEFAULT 0");
+  }
+  if (!colNames.has('deploy_type')) {
+    database.exec("ALTER TABLE project_meta ADD COLUMN deploy_type TEXT");
+  }
 }
