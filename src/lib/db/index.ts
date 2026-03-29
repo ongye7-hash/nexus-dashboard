@@ -205,6 +205,30 @@ function initializeTables() {
     )
   `);
 
+  // AI 채팅 세션 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      project_path TEXT,
+      model TEXT DEFAULT 'claude-sonnet-4-6',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // AI 채팅 메시지 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+    )
+  `);
+
   // project_meta 확장 컬럼 (기존 테이블에 안전하게 추가)
   const columns = database.prepare("PRAGMA table_info(project_meta)").all() as { name: string }[];
   const colNames = new Set(columns.map(c => c.name));

@@ -24,6 +24,7 @@ import {
   Plus,
   FolderGit2 as GithubIcon,
   Server,
+  MessageSquare,
 } from 'lucide-react';
 
 interface ProjectGroup {
@@ -51,6 +52,7 @@ interface SidebarProps {
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
   onOpenSettings?: () => void;
+  onSearch?: () => void;
 }
 
 const TAG_COLORS = [
@@ -89,7 +91,7 @@ const TYPE_FILTERS = [
   { id: 'html', label: 'HTML (웹페이지)', icon: Globe, color: '#e34c26' },
 ];
 
-export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], groups = [], groupCounts = {}, onManageGroups, isMobileOpen, onMobileClose, onOpenSettings }: SidebarProps) {
+export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], groups = [], groupCounts = {}, onManageGroups, isMobileOpen, onMobileClose, onOpenSettings, onSearch }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   const handleFilterChange = (filter: string) => {
@@ -143,7 +145,10 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
         {/* 검색 힌트 */}
         {!collapsed && (
           <div className="p-3">
-            <button className="w-full flex items-center gap-3 px-3 py-2 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-500 hover:border-[#3f3f46] transition-colors">
+            <button
+              onClick={onSearch}
+              className="w-full flex items-center gap-3 px-3 py-2 bg-[#18181b] border border-[#27272a] rounded-lg text-sm text-zinc-500 hover:border-[#3f3f46] transition-colors"
+            >
               <Search className="w-4 h-4" />
               <span>검색</span>
               <span className="ml-auto flex gap-1">
@@ -215,6 +220,18 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
             >
               <Server className="w-4 h-4 flex-shrink-0" />
               {!collapsed && <span className="flex-1 text-left">VPS</span>}
+            </button>
+            {/* AI 채팅 */}
+            <button
+              onClick={() => handleFilterChange('ai-chat')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                activeFilter === 'ai-chat'
+                  ? 'bg-indigo-500/10 text-indigo-400'
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="flex-1 text-left">AI 채팅</span>}
             </button>
           </div>
 
