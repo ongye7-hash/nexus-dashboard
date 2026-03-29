@@ -48,6 +48,7 @@ export function AIChatPanel() {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
+  const [activeTools, setActiveTools] = useState<Array<{ name: string; status: string }>>([]);
   const [showSessions, setShowSessions] = useState(true);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [registeredProjects, setRegisteredProjects] = useState<RegisteredProject[]>([]);
@@ -203,19 +204,36 @@ export function AIChatPanel() {
               fetchSessions();
             }
 
+            if (parsed.type === 'tool_call') {
+              setActiveTools(prev => {
+                const existing = prev.findIndex(t => t.name === parsed.name);
+                if (existing >= 0) {
+                  const updated = [...prev];
+                  updated[existing] = { name: parsed.name, status: parsed.status };
+                  return updated;
+                }
+                return [...prev, { name: parsed.name, status: parsed.status }];
+              });
+            }
+
             if (parsed.type === 'delta' && parsed.text) {
+              setActiveTools([]); // 텍스트 응답 시작 → 도구 상태 클리어
               accumulated += parsed.text;
               setStreamText(accumulated);
             }
 
             if (parsed.type === 'done') {
+              setActiveTools([]);
+              setStreaming(false);
               // 스트리밍 완료 → 메시지 배열에 추가
-              setMessages(prev => [...prev, {
-                id: nextId(),
-                role: 'assistant',
-                content: accumulated,
-                created_at: new Date().toISOString(),
-              }]);
+              if (accumulated) {
+                setMessages(prev => [...prev, {
+                  id: nextId(),
+                  role: 'assistant',
+                  content: accumulated,
+                  created_at: new Date().toISOString(),
+                }]);
+              }
               setStreamText('');
             }
 
@@ -478,8 +496,35 @@ export function AIChatPanel() {
             </div>
           )}
 
+          {/* 도구 실행 상태 */}
+          {activeTools.length > 0 && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                <Bot className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="space-y-2">
+                {activeTools.map(tool => (
+                  <div
+                    key={tool.name}
+                    className="flex items-center gap-2 px-3 py-2 bg-[#18181b] border border-[#27272a] rounded-xl text-xs"
+                  >
+                    {tool.status === 'running' ? (
+                      <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                    ) : (
+                      <span className="text-green-400">&#10003;</span>
+                    )}
+                    <span className="text-zinc-300 font-mono">{tool.name}</span>
+                    <span className="text-zinc-500">
+                      {tool.status === 'running' ? '실행 중...' : '완료'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 로딩 인디케이터 */}
-          {streaming && !streamText && (
+          {streaming && !streamText && activeTools.length === 0 && (
             <div className="flex gap-3">
               <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
                 <Bot className="w-4 h-4 text-indigo-400" />

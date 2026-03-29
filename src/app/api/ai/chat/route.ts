@@ -3,6 +3,7 @@ import path from 'path';
 import { getDb } from '@/lib/db';
 import { getSetting, getRegisteredProjects, getDeployTargets } from '@/lib/database';
 import { decrypt } from '@/lib/crypto';
+import { getToolSchemas, executeTool } from '@/lib/ai/tools';
 import crypto from 'crypto';
 
 const CHAT_MODEL = 'claude-sonnet-4-6';
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
         { status: 401, headers: { 'Content-Type': 'application/json' } }
       );
     }
+    const safeApiKey: string = apiKey;
 
     const db = getDb();
     let currentSessionId = sessionId;
@@ -149,43 +151,50 @@ export async function POST(request: NextRequest) {
     ).run(currentSessionId, 'user', message.trim());
 
     // 대화 히스토리 로드 (최근 50개 제한)
-    const history = db.prepare(
+    const historyRows = db.prepare(
       'SELECT role, content FROM chat_messages WHERE session_id = ? ORDER BY id ASC LIMIT 50'
     ).all(currentSessionId) as { role: string; content: string }[];
 
-    // Claude API 스트리밍 호출
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: CHAT_MODEL,
-        max_tokens: MAX_TOKENS,
-        system: buildSystemPrompt(resolvedProjectPath),
-        stream: true,
-        messages: history.map(m => ({ role: m.role, content: m.content })),
-      }),
-    });
+    // content가 JSON 배열이면 파싱 (tool_use/tool_result 메시지)
+    function parseContent(content: string): string | unknown[] {
+      try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) return parsed;
+        return content;
+      } catch { return content; }
+    }
 
-    if (!claudeRes.ok) {
-      const err = await claudeRes.json().catch(() => ({}));
-      const msg = err.error?.message || `Claude API 오류 (${claudeRes.status})`;
-      if (claudeRes.status === 401) {
-        return new Response(JSON.stringify({ error: 'API 키가 유효하지 않습니다.' }), {
-          status: 401, headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (claudeRes.status === 429) {
-        return new Response(JSON.stringify({ error: '요청 한도 초과. 잠시 후 다시 시도하세요.' }), {
-          status: 429, headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(JSON.stringify({ error: msg }), {
-        status: claudeRes.status, headers: { 'Content-Type': 'application/json' },
+    const messages: Array<{ role: string; content: string | unknown[] }> = historyRows.map(m => ({
+      role: m.role,
+      content: parseContent(m.content),
+    }));
+
+    const systemPrompt = buildSystemPrompt(resolvedProjectPath);
+    const tools = getToolSchemas();
+    const MAX_TOOL_ROUNDS = 5;
+
+    // Claude API 공통 호출 함수 (non-streaming)
+    async function callClaudeNonStreaming(msgs: typeof messages): Promise<{ content: unknown[]; stop_reason: string }> {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': safeApiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: CHAT_MODEL,
+          max_tokens: MAX_TOKENS,
+          system: systemPrompt,
+          tools,
+          messages: msgs,
+        }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Claude API 오류 (${res.status})`);
+      }
+      return res.json();
     }
 
     // SSE 스트리밍 응답
@@ -194,55 +203,103 @@ export async function POST(request: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        const send = (data: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        };
+
         try {
           // 세션 ID를 첫 이벤트로 전송
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'session', sessionId: currentSessionId })}\n\n`));
+          send({ type: 'session', sessionId: currentSessionId });
 
-          const reader = claudeRes.body!.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
+          // Tool use 루프: non-streaming으로 도구 실행, 마지막 텍스트 응답만 스트리밍
+          const loopMessages = [...messages];
+          let toolRounds = 0;
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+          while (toolRounds < MAX_TOOL_ROUNDS) {
+            // 먼저 non-streaming으로 호출해서 tool_use 여부 확인
+            const result = await callClaudeNonStreaming(loopMessages);
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            // tool_use 블록 추출
+            const toolUseBlocks = (result.content as Array<Record<string, unknown>>).filter(
+              (b) => b.type === 'tool_use'
+            );
 
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
+            if (result.stop_reason !== 'tool_use' || toolUseBlocks.length === 0) {
+              // tool_use 없음 → 텍스트 응답 추출하고 루프 종료
+              const textBlocks = (result.content as Array<Record<string, unknown>>).filter(
+                (b) => b.type === 'text'
+              );
+              fullResponse = textBlocks.map(b => b.text).join('');
 
-              try {
-                const parsed = JSON.parse(data);
-
-                if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-                  fullResponse += parsed.delta.text;
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: parsed.delta.text })}\n\n`));
-                }
-
-                if (parsed.type === 'message_stop') {
-                  // 어시스턴트 응답 DB 저장
-                  db.prepare(
-                    'INSERT INTO chat_messages (session_id, role, content, created_at) VALUES (?, ?, ?, datetime(\'now\'))'
-                  ).run(currentSessionId, 'assistant', fullResponse);
-
-                  // 세션 updated_at 갱신
-                  db.prepare(
-                    'UPDATE chat_sessions SET updated_at = datetime(\'now\') WHERE id = ?'
-                  ).run(currentSessionId);
-
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
-                }
-              } catch {
-                // JSON 파싱 실패 — SSE 이벤트 건너뜀
+              // 텍스트를 delta로 전송 (청크 분할해서 스트리밍처럼 보이게)
+              const chunkSize = 20;
+              for (let i = 0; i < fullResponse.length; i += chunkSize) {
+                send({ type: 'delta', text: fullResponse.slice(i, i + chunkSize) });
               }
+              break;
             }
+
+            // tool_use 응답을 메시지에 추가
+            loopMessages.push({ role: 'assistant', content: result.content as unknown[] });
+
+            // assistant의 tool_use를 DB에 저장
+            db.prepare(
+              'INSERT INTO chat_messages (session_id, role, content, created_at) VALUES (?, ?, ?, datetime(\'now\'))'
+            ).run(currentSessionId, 'assistant', JSON.stringify(result.content));
+
+            // 각 도구 실행
+            const toolResults: unknown[] = [];
+            for (const block of toolUseBlocks) {
+              const toolName = String(block.name);
+              const toolInput = (block.input || {}) as Record<string, unknown>;
+              const toolUseId = String(block.id);
+
+              // 프론트에 도구 실행 알림
+              send({ type: 'tool_call', name: toolName, status: 'running' });
+
+              const toolResult = await executeTool(toolName, toolInput);
+
+              send({ type: 'tool_call', name: toolName, status: 'complete' });
+
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolUseId,
+                content: toolResult,
+              });
+            }
+
+            // tool_result를 메시지에 추가
+            loopMessages.push({ role: 'user', content: toolResults });
+
+            // tool_result를 DB에 저장
+            db.prepare(
+              'INSERT INTO chat_messages (session_id, role, content, created_at) VALUES (?, ?, ?, datetime(\'now\'))'
+            ).run(currentSessionId, 'user', JSON.stringify(toolResults));
+
+            toolRounds++;
           }
+
+          // 루프 한도 도달 시 에러
+          if (!fullResponse.trim() && toolRounds >= MAX_TOOL_ROUNDS) {
+            fullResponse = '도구 실행 한도(5회)에 도달했습니다. 질문을 더 구체적으로 해주세요.';
+            send({ type: 'delta', text: fullResponse });
+          }
+
+          // 최종 응답 DB 저장
+          if (fullResponse.trim()) {
+            db.prepare(
+              'INSERT INTO chat_messages (session_id, role, content, created_at) VALUES (?, ?, ?, datetime(\'now\'))'
+            ).run(currentSessionId, 'assistant', fullResponse);
+          }
+
+          // 세션 updated_at 갱신
+          db.prepare(
+            'UPDATE chat_sessions SET updated_at = datetime(\'now\') WHERE id = ?'
+          ).run(currentSessionId);
+
+          send({ type: 'done' });
         } catch (error) {
-          console.error('Streaming error:', error);
+          console.error('Chat streaming error:', error);
           // 중단/에러 시에도 누적된 응답이 있으면 DB에 저장
           if (fullResponse.trim()) {
             try {
@@ -255,7 +312,8 @@ export async function POST(request: NextRequest) {
               console.warn('중단된 응답 저장 실패:', dbErr);
             }
           }
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: '스트리밍 중 오류가 발생했습니다' })}\n\n`));
+          const errMsg = error instanceof Error ? error.message : '스트리밍 중 오류가 발생했습니다';
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: errMsg })}\n\n`));
         } finally {
           controller.close();
         }
