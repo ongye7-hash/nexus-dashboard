@@ -10,6 +10,7 @@ import {
   EyeOff,
   Unlink,
   Zap,
+  TrendingUp,
 } from 'lucide-react';
 
 export default function AITab() {
@@ -31,9 +32,18 @@ export default function AITab() {
   const [n8nSaveSuccess, setN8nSaveSuccess] = useState(false);
   const [n8nConfirmDelete, setN8nConfirmDelete] = useState(false);
 
+  // trends
+  const [trendsKey, setTrendsKey] = useState('');
+  const [trendsSaving, setTrendsSaving] = useState(false);
+  const [trendsStatus, setTrendsStatus] = useState<{ online: boolean } | null>(null);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
+  const [trendsSaveSuccess, setTrendsSaveSuccess] = useState(false);
+  const [trendsConfirmDelete, setTrendsConfirmDelete] = useState(false);
+
   useEffect(() => {
     checkStatus();
     checkN8nStatus();
+    checkTrendsStatus();
   }, []);
 
   useEffect(() => {
@@ -47,6 +57,12 @@ export default function AITab() {
     const timer = setTimeout(() => setN8nSaveSuccess(false), 2000);
     return () => clearTimeout(timer);
   }, [n8nSaveSuccess]);
+
+  useEffect(() => {
+    if (!trendsSaveSuccess) return;
+    const timer = setTimeout(() => setTrendsSaveSuccess(false), 2000);
+    return () => clearTimeout(timer);
+  }, [trendsSaveSuccess]);
 
   const checkStatus = async () => {
     setLoading(true);
@@ -159,6 +175,48 @@ export default function AITab() {
     } catch (error) {
       console.warn('n8n API 키 삭제 실패:', error);
       setN8nError('n8n API 키 삭제에 실패했습니다');
+    }
+  };
+
+  const checkTrendsStatus = async () => {
+    try {
+      const res = await fetch('/api/ai?action=trendsStatus');
+      const data = await res.json();
+      setTrendsStatus(data);
+    } catch { setTrendsStatus(null); }
+  };
+
+  const handleSaveTrendsKey = async () => {
+    if (!trendsKey.trim()) return;
+    setTrendsSaving(true);
+    setTrendsError(null);
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'saveTrendsKey', trendsApiKey: trendsKey.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) { setTrendsKey(''); setTrendsSaveSuccess(true); await checkTrendsStatus(); }
+      else setTrendsError(data.error || '저장 실패');
+    } catch (error) {
+      console.warn('Trends API 키 저장 실패:', error);
+      setTrendsError('Trends API 키 저장에 실패했습니다');
+    } finally { setTrendsSaving(false); }
+  };
+
+  const handleDeleteTrendsKey = async () => {
+    if (!trendsConfirmDelete) { setTrendsConfirmDelete(true); return; }
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deleteTrendsKey' }),
+      });
+      if (res.ok) { setTrendsConfirmDelete(false); await checkTrendsStatus(); }
+    } catch (error) {
+      console.warn('Trends API 키 삭제 실패:', error);
+      setTrendsError('Trends API 키 삭제에 실패했습니다');
     }
   };
 
@@ -350,6 +408,80 @@ export default function AITab() {
         {n8nError && (
           <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
             <p className="text-sm text-red-400">{n8nError}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Trends API Key 섹션 */}
+      <div className="mt-6 pt-6 border-t border-[#27272a]">
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <span className="text-sm font-medium text-white">트렌드 피드</span>
+        </div>
+
+        {trendsStatus?.online ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-[#0f0f10] rounded-lg">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-white">Trends API</p>
+                <p className="text-xs text-zinc-500">n8n 워크플로우에서 트렌드 수신</p>
+              </div>
+              <div className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded-full">
+                <Check className="w-3 h-3 text-green-400" />
+                <span className="text-xs text-green-400">설정됨</span>
+              </div>
+            </div>
+            <button
+              onClick={handleDeleteTrendsKey}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                trendsConfirmDelete
+                  ? 'bg-red-600 hover:bg-red-500 text-white'
+                  : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10'
+              }`}
+            >
+              <Unlink className="w-4 h-4" />
+              {trendsConfirmDelete ? '정말 삭제하시겠습니까?' : 'API 키 삭제'}
+            </button>
+            {trendsConfirmDelete && (
+              <button onClick={() => setTrendsConfirmDelete(false)} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                취소
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="p-3 bg-[#0f0f10] rounded-lg">
+              <p className="text-sm text-zinc-300 mb-1">Trends API Key</p>
+              <p className="text-xs text-zinc-500">n8n에서 POST /api/trends 호출 시 사용할 Bearer 토큰</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Key className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              <input
+                type="password"
+                value={trendsKey}
+                onChange={(e) => { setTrendsKey(e.target.value); setTrendsError(null); }}
+                placeholder="임의의 시크릿 키 입력..."
+                className="flex-1 px-3 py-2 bg-[#0f0f10] border border-[#27272a] rounded-lg text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-emerald-500 font-mono"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTrendsKey(); }}
+              />
+            </div>
+            <button
+              onClick={handleSaveTrendsKey}
+              disabled={!trendsKey.trim() || trendsSaving}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm text-white font-medium transition-colors"
+            >
+              {trendsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : trendsSaveSuccess ? <Check className="w-4 h-4" /> : <TrendingUp className="w-4 h-4" />}
+              {trendsSaving ? '저장 중...' : trendsSaveSuccess ? '저장 완료!' : '저장'}
+            </button>
+          </div>
+        )}
+
+        {trendsError && (
+          <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <p className="text-sm text-red-400">{trendsError}</p>
           </div>
         )}
       </div>

@@ -243,10 +243,12 @@ export async function GET(request: NextRequest) {
     case 'n8nStatus': {
       const n8nKey = getSetting('n8n_api_key');
       const n8nUrl = getSetting('n8n_url') || 'https://n8n.ongye.org';
-      return NextResponse.json({
-        online: !!n8nKey,
-        url: n8nUrl,
-      });
+      return NextResponse.json({ online: !!n8nKey, url: n8nUrl });
+    }
+
+    case 'trendsStatus': {
+      const trendsKey = getSetting('trends_api_key');
+      return NextResponse.json({ online: !!trendsKey });
     }
 
     default:
@@ -306,6 +308,19 @@ export async function POST(request: Request) {
 
     if (action === 'deleteN8nKey') {
       deleteSetting('n8n_api_key');
+      return NextResponse.json({ success: true });
+    }
+
+    // Trends API Key 저장
+    if (action === 'saveTrendsKey') {
+      const { trendsApiKey } = body;
+      if (!trendsApiKey) return NextResponse.json({ error: 'Trends API Key가 필요합니다' }, { status: 400 });
+      setSetting('trends_api_key', encrypt(trendsApiKey.trim()));
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === 'deleteTrendsKey') {
+      deleteSetting('trends_api_key');
       return NextResponse.json({ success: true });
     }
 

@@ -13,6 +13,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import GreetingHeader from './codex/GreetingHeader';
 import AlertsPanel, { AlertItem } from './codex/AlertsPanel';
 import RunningServers from './codex/RunningServers';
+import TrendsSection from './TrendsSection';
 import FocusProjectCard from './codex/FocusProjectCard';
 import ProgressSection from './codex/ProgressSection';
 
@@ -364,6 +365,9 @@ export function MorningCodex({
 
       {/* 현재 작업 상태 */}
       <ProgressSection />
+
+      {/* 오늘의 트렌드 */}
+      <TrendsSection />
 
       {/* 3. 실행 중인 서버 */}
       <RunningServers

@@ -19,8 +19,10 @@ const PUBLIC_PREFIXES = [
   '/manifest',
 ];
 
-function isPublicPath(pathname: string): boolean {
+function isPublicPath(pathname: string, method?: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
+  // POST /api/trends는 Bearer 토큰으로 자체 인증 (n8n 서버 간 통신)
+  if (pathname === '/api/trends' && method === 'POST') return true;
   return PUBLIC_PREFIXES.some(prefix => pathname.startsWith(prefix));
 }
 
@@ -42,7 +44,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 공개 경로는 통과
-  if (isPublicPath(pathname)) {
+  if (isPublicPath(pathname, request.method)) {
     return NextResponse.next();
   }
 

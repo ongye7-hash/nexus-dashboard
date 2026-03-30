@@ -1,5 +1,6 @@
 import { execFileSync } from 'child_process';
 import path from 'path';
+import { getDb } from '@/lib/db';
 import { getRegisteredProjects, getDeployTargets, getAllVPSServers, getVPSServer, getSetting } from '@/lib/database';
 import { connectSSH, sshExec } from '@/lib/ssh';
 import { validateProjectPath } from '@/lib/path-validator';
@@ -472,6 +473,55 @@ const n8nWorkflowToggleTool: Tool = {
   },
 };
 
+// 10. get_trends — 오늘의 기술 트렌드 조회
+const getTrendsTool: Tool = {
+  name: 'get_trends',
+  description: '오늘의 기술 트렌드를 조회한다. n8n이 수집한 HackerNews, Reddit 등의 트렌드 정보를 반환한다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      date: { type: 'string', description: '조회할 날짜 (YYYY-MM-DD, 기본: 오늘)' },
+      minScore: { type: 'number', description: '최소 점수 필터 (기본: 0)' },
+    },
+    required: [],
+  },
+  permission: 'read',
+  async execute(input) {
+    const rawDate = String(input.date || '');
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : new Date().toISOString().slice(0, 10);
+    const minScore = parseInt(String(input.minScore)) || 0;
+
+    try {
+      const db = getDb();
+      const rows = db.prepare(
+        'SELECT title, summary, source, source_url, tags, relevance, score FROM trends WHERE date(created_at) = ? AND score >= ? ORDER BY score DESC LIMIT 20'
+      ).all(date, minScore) as Array<Record<string, unknown>>;
+
+      if (rows.length === 0) return `${date} 트렌드가 없습니다.`;
+
+      const lines = rows.map((r, i) => {
+        let line = `${i + 1}. [${r.score}점] ${r.title}`;
+        line += `\n   ${r.summary}`;
+        line += `\n   소스: ${r.source}${r.source_url ? ` (${r.source_url})` : ''}`;
+        if (r.tags) line += `\n   태그: ${r.tags}`;
+        if (r.relevance) {
+          try {
+            const rel = JSON.parse(String(r.relevance));
+            if (Array.isArray(rel) && rel.length > 0) {
+              line += `\n   연계: ${rel.map((e: Record<string, unknown>) => `${e.project}(${e.reason})`).join(', ')}`;
+            }
+          } catch { /* 파싱 실패 무시 */ }
+        }
+        return line;
+      });
+
+      return `${date} 트렌드 ${rows.length}건:\n\n${lines.join('\n\n')}`;
+    } catch (error) {
+      return `트렌드 조회 실패: ${error instanceof Error ? error.message : 'unknown'}`;
+    }
+  },
+};
+
 // ============ Tool Registry ============
 
 export const TOOLS: Tool[] = [
@@ -484,6 +534,7 @@ export const TOOLS: Tool[] = [
   serviceRestartTool,
   deployTriggerTool,
   n8nWorkflowToggleTool,
+  getTrendsTool,
 ];
 
 // 도구의 permission 조회

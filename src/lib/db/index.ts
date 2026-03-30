@@ -229,6 +229,22 @@ function initializeTables() {
     )
   `);
 
+  // 트렌드 피드 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS trends (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      source TEXT NOT NULL,
+      source_url TEXT UNIQUE,
+      tags TEXT,
+      relevance TEXT,
+      score INTEGER DEFAULT 0,
+      published_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // 도구 실행 승인 테이블
   database.exec(`
     CREATE TABLE IF NOT EXISTS tool_approvals (
