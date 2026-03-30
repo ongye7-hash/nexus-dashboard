@@ -240,6 +240,15 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    case 'n8nStatus': {
+      const n8nKey = getSetting('n8n_api_key');
+      const n8nUrl = getSetting('n8n_url') || 'https://n8n.ongye.org';
+      return NextResponse.json({
+        online: !!n8nKey,
+        url: n8nUrl,
+      });
+    }
+
     default:
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   }
@@ -283,6 +292,20 @@ export async function POST(request: Request) {
 
     if (action === 'deleteApiKey') {
       deleteSetting('claude_api_key');
+      return NextResponse.json({ success: true });
+    }
+
+    // n8n API Key 저장
+    if (action === 'saveN8nKey') {
+      const { n8nApiKey, n8nUrl } = body;
+      if (!n8nApiKey) return NextResponse.json({ error: 'n8n API Key가 필요합니다' }, { status: 400 });
+      setSetting('n8n_api_key', encrypt(n8nApiKey.trim()));
+      if (n8nUrl) setSetting('n8n_url', n8nUrl.trim());
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === 'deleteN8nKey') {
+      deleteSetting('n8n_api_key');
       return NextResponse.json({ success: true });
     }
 
