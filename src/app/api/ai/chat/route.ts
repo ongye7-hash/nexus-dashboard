@@ -262,8 +262,16 @@ export async function POST(request: NextRequest) {
           let toolRounds = 0;
 
           while (toolRounds < MAX_TOOL_ROUNDS) {
-            // 먼저 non-streaming으로 호출해서 tool_use 여부 확인
-            const result = await callClaudeNonStreaming(loopMessages);
+            // 먼저 non-streaming으로 호출 (heartbeat로 연결 유지)
+            const claudeHb = setInterval(() => {
+              send({ type: 'heartbeat' });
+            }, 10000);
+            let result: { content: unknown[]; stop_reason: string };
+            try {
+              result = await callClaudeNonStreaming(loopMessages);
+            } finally {
+              clearInterval(claudeHb);
+            }
 
             // tool_use 블록 추출
             const toolUseBlocks = (result.content as Array<Record<string, unknown>>).filter(
@@ -327,7 +335,16 @@ export async function POST(request: NextRequest) {
 
                 if (approved) {
                   send({ type: 'tool_call', name: toolName, status: 'running' });
-                  toolResult = await executeTool(toolName, toolInput);
+
+                  const hb = setInterval(() => {
+                    send({ type: 'tool_call', name: toolName, status: 'running' });
+                  }, 10000);
+                  try {
+                    toolResult = await executeTool(toolName, toolInput);
+                  } finally {
+                    clearInterval(hb);
+                  }
+
                   send({ type: 'tool_call', name: toolName, status: 'complete' });
 
                   // 실행 완료 기록
@@ -344,9 +361,20 @@ export async function POST(request: NextRequest) {
                   send({ type: 'tool_call', name: toolName, status: 'timeout' });
                 }
               } else {
-                // 읽기 도구 → 즉시 실행
+                // 읽기 도구 → 즉시 실행 (heartbeat로 연결 유지)
                 send({ type: 'tool_call', name: toolName, status: 'running' });
-                toolResult = await executeTool(toolName, toolInput);
+
+                // 긴 도구 실행 중 10초마다 heartbeat 전송 (nginx 타임아웃 방지)
+                const heartbeatInterval = setInterval(() => {
+                  send({ type: 'tool_call', name: toolName, status: 'running' });
+                }, 10000);
+
+                try {
+                  toolResult = await executeTool(toolName, toolInput);
+                } finally {
+                  clearInterval(heartbeatInterval);
+                }
+
                 send({ type: 'tool_call', name: toolName, status: 'complete' });
               }
 
