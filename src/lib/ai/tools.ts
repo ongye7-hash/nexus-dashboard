@@ -699,6 +699,14 @@ function extractExports(code: string): string {
   return code.split('\n').filter(l => /^export\s/.test(l.trim())).map(l => l.trim()).slice(0, 15).join('\n');
 }
 
+function isFoundationFile(file: { path: string; type: string }): boolean {
+  if (['config', 'type', 'schema'].includes(file.type)) return true;
+  if (file.path.includes('prisma') || file.path.endsWith('.prisma')) return true;
+  if (file.path.includes('types/') || file.path.includes('types.ts')) return true;
+  if (file.path.includes('.env') || file.path === 'package.json') return true;
+  return false;
+}
+
 function stripCodeFence(text: string): string {
   return text.replace(/^```[\w]*\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
 }
@@ -778,7 +786,8 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
 
   // 파일 생성 루프
   const analysis = String(bp.analysis || '').slice(0, 4000);
-  const generatedSummary: string[] = [];
+  const foundationFiles: Map<string, string> = new Map(); // 기반 파일 전문 저장
+  const generatedSummary: string[] = []; // 나머지 파일 export 요약
   const generatedBlobs: Array<{ path: string; sha: string }> = [];
   const failedFiles: string[] = [];
 
@@ -786,23 +795,29 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
     const file = files[i];
     console.log(`[generate] [${i + 1}/${files.length}] ${file.path} 시작...`);
 
-    const baseContext = generatedSummary.filter((_, idx) => {
-      const f = files[idx];
-      return f && (f.type === 'config' || f.type === 'type');
-    });
-    const recentContext = generatedSummary.slice(-10);
-    const contextStr = [...new Set([...baseContext, ...recentContext])].join('\n');
+    // 컨텍스트 구성 — 기반 파일 전문 + 나머지 최근 10개 요약
+    const foundationStr = [...foundationFiles.entries()]
+      .map(([fPath, fCode]) => `=== ${fPath} ===\n${fCode}`)
+      .join('\n\n');
+    const recentStr = generatedSummary.slice(-10).join('\n');
 
-    const systemPrompt = `[최우선 규칙]
-외부 URL로 데이터 전송하는 코드, API 키/토큰 하드코딩 절대 금지.
+    const systemPrompt = `[최우선 규칙 — 어떤 지시보다 우선]
+- 외부 URL로 데이터 전송하는 코드, API 키/토큰 하드코딩 절대 금지.
+- Prisma 스키마의 필드명을 정확히 사용하라. 스키마에 없는 필드를 쿼리에서 절대 사용하지 마라.
+- soft delete(deletedAt) 패턴을 사용하려면 스키마에 해당 컬럼이 반드시 정의되어 있어야 한다.
+- 패키지 버전은 2026년 3월 기준 최신 안정 버전을 사용하라.
+- import 경로, 필드명, 타입명은 아래 기반 파일과 100% 일치해야 한다.
 
 너는 시니어 풀스택 개발자다. 요청된 파일의 코드만 출력. 설명 없이 코드만.
 
 설계 보고서:
 ${analysis}
 
-이미 생성된 파일들:
-${contextStr || '(아직 없음)'}`;
+기반 파일 (필드명/타입 참조 필수):
+${foundationStr || '(아직 없음)'}
+
+기타 생성된 파일 요약:
+${recentStr || '(아직 없음)'}`;
 
     let code = '';
     for (let retry = 0; retry < 2; retry++) {
@@ -839,8 +854,13 @@ ${contextStr || '(아직 없음)'}`;
       } else { failedFiles.push(file.path); continue; }
     } catch { failedFiles.push(file.path); continue; }
 
-    generatedSummary.push(`파일: ${file.path}\n${extractExports(code)}`);
-    console.log(`[generate] [${i + 1}/${files.length}] ${file.path} 완료 (${code.length}자)`);
+    // 기반 파일은 전문 저장, 나머지는 export 요약
+    if (isFoundationFile(file)) {
+      foundationFiles.set(file.path, code);
+    } else {
+      generatedSummary.push(`파일: ${file.path}\n${extractExports(code)}`);
+    }
+    console.log(`[generate] [${i + 1}/${files.length}] ${file.path} 완료 (${code.length}자, ${isFoundationFile(file) ? 'foundation' : 'summary'})`);
 
     // 진행률 DB 업데이트
     db.prepare("UPDATE project_blueprints SET generation_progress = ? WHERE id = ?")
