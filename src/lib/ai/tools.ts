@@ -569,7 +569,13 @@ JSON만 출력하세요. 다른 텍스트, 설명, 마크다운은 절대 포함
 file_structure 규칙:
 - order: config=1~5, types=6~10, lib/util=11~15, api=16~25, components=26~35, pages=36~45, other=46~50
 - 프로젝트의 모든 파일을 빠짐없이 포함
-- dependencies: 해당 파일이 import하는 다른 파일의 path`;
+- dependencies: 해당 파일이 import하는 다른 파일의 path
+
+[필수] 프레임워크별 빌드 필수 파일 — 반드시 file_structure에 포함:
+- Next.js: src/app/layout.tsx (루트 레이아웃, 없으면 빌드 불가), src/app/globals.css (Tailwind @import), tsconfig.json, postcss.config.js (또는 postcss.config.mjs), tailwind.config.ts (또는 tailwind.config.js), .eslintrc.json (또는 eslint.config.js/mjs), next.config.js (또는 next.config.mjs/ts), README.md
+- Express/Fastify: tsconfig.json, src/index.ts (엔트리포인트), .env.example, README.md
+- React (Vite): index.html, src/main.tsx, src/App.tsx, vite.config.ts, tsconfig.json, postcss.config.js, tailwind.config.js, README.md
+이 파일들은 20개 제한에 포함되며, 절대 생략하지 마라.`;
 
 const projectIdeateTool: Tool = {
   name: 'project_ideate',
@@ -713,6 +719,61 @@ function stripCodeFence(text: string): string {
 
 interface FileEntry { path: string; type: string; description: string; order: number; dependencies: string[] }
 
+// 프레임워크별 빌드 필수 파일 — ideate에서 누락 시 generate에서 자동 보강
+const FRAMEWORK_REQUIRED_FILES: Record<string, FileEntry[]> = {
+  'next.js': [
+    { path: 'src/app/layout.tsx', type: 'page', description: '루트 레이아웃 (html, body, metadata, globals.css import)', order: 2, dependencies: ['src/app/globals.css'] },
+    { path: 'src/app/globals.css', type: 'config', description: 'Tailwind CSS @import (base, components, utilities)', order: 3, dependencies: [] },
+    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 (paths alias 포함)', order: 1, dependencies: [] },
+    { path: 'postcss.config.mjs', type: 'config', description: 'PostCSS + Tailwind 플러그인 설정', order: 1, dependencies: [] },
+    { path: 'tailwind.config.ts', type: 'config', description: 'Tailwind CSS 설정 (content 경로 포함)', order: 1, dependencies: [] },
+    { path: 'next.config.ts', type: 'config', description: 'Next.js 프레임워크 설정', order: 1, dependencies: [] },
+    { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법, 기술 스택', order: 50, dependencies: [] },
+  ],
+  'express': [
+    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정', order: 1, dependencies: [] },
+    { path: 'src/index.ts', type: 'config', description: '서버 엔트리포인트 (Express app 시작)', order: 3, dependencies: [] },
+    { path: '.env.example', type: 'config', description: '환경변수 예제 파일', order: 2, dependencies: [] },
+    { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법', order: 50, dependencies: [] },
+  ],
+  'react': [
+    { path: 'index.html', type: 'config', description: 'HTML 엔트리포인트', order: 1, dependencies: [] },
+    { path: 'src/main.tsx', type: 'config', description: 'React 엔트리포인트 (createRoot)', order: 2, dependencies: [] },
+    { path: 'src/App.tsx', type: 'page', description: '루트 App 컴포넌트', order: 3, dependencies: [] },
+    { path: 'vite.config.ts', type: 'config', description: 'Vite 빌드 설정', order: 1, dependencies: [] },
+    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정', order: 1, dependencies: [] },
+    { path: 'postcss.config.js', type: 'config', description: 'PostCSS + Tailwind 플러그인', order: 1, dependencies: [] },
+    { path: 'tailwind.config.js', type: 'config', description: 'Tailwind CSS 설정', order: 1, dependencies: [] },
+    { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법', order: 50, dependencies: [] },
+  ],
+};
+
+function ensureRequiredFiles(files: FileEntry[], techStack: Record<string, unknown>): FileEntry[] {
+  const framework = String(techStack.framework || '').toLowerCase();
+  // 매칭: "Next.js" → "next.js", "Express.js" → "express", "React (Vite)" → "react"
+  const matchedKey = Object.keys(FRAMEWORK_REQUIRED_FILES).find(k => framework.includes(k));
+  if (!matchedKey) return files;
+
+  const required = FRAMEWORK_REQUIRED_FILES[matchedKey];
+  const existingPaths = new Set(files.map(f => f.path.toLowerCase()));
+  const missing: FileEntry[] = [];
+
+  for (const req of required) {
+    // 유연 매칭: postcss.config.mjs ↔ postcss.config.js, next.config.ts ↔ next.config.mjs 등
+    const baseName = req.path.replace(/\.(mjs|ts|js|json)$/, '');
+    const hasVariant = files.some(f => f.path.toLowerCase().replace(/\.(mjs|ts|js|json)$/, '') === baseName.toLowerCase());
+    if (!hasVariant && !existingPaths.has(req.path.toLowerCase())) {
+      missing.push(req);
+    }
+  }
+
+  if (missing.length > 0) {
+    console.log(`[generate] 필수 파일 ${missing.length}개 자동 보강: ${missing.map(f => f.path).join(', ')}`);
+  }
+
+  return [...files, ...missing];
+}
+
 // 12. project_generate — 비동기 코드 생성 + GitHub push
 
 async function generateCodeInBackground(blueprintId: string): Promise<void> {
@@ -722,7 +783,14 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
   const ghToken = decrypt(getSetting('github_token')!);
   const claudeKey = decrypt(getSetting('claude_api_key')!);
 
-  const files: FileEntry[] = JSON.parse(String(bp.file_structure));
+  let files: FileEntry[] = JSON.parse(String(bp.file_structure));
+
+  // tech_stack 기반 필수 파일 자동 보강
+  try {
+    const techStack = JSON.parse(String(bp.tech_stack || '{}'));
+    files = ensureRequiredFiles(files, techStack);
+  } catch { /* tech_stack 파싱 실패 시 그냥 진행 */ }
+
   files.sort((a, b) => (a.order || 99) - (b.order || 99));
 
   let repoName: string;
