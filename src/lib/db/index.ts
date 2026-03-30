@@ -285,6 +285,9 @@ function initializeTables() {
     database.exec("ALTER TABLE project_blueprints ADD COLUMN generated_files TEXT");
   }
 
+  // 서버 재시작 시 stuck 상태 코드 생성 정리
+  database.exec("UPDATE project_blueprints SET status = 'failed' WHERE status = 'generating'");
+
   // project_meta 확장 컬럼 (기존 테이블에 안전하게 추가)
   const columns = database.prepare("PRAGMA table_info(project_meta)").all() as { name: string }[];
   const colNames = new Set(columns.map(c => c.name));
