@@ -719,19 +719,43 @@ function stripCodeFence(text: string): string {
 
 interface FileEntry { path: string; type: string; description: string; order: number; dependencies: string[] }
 
+// 생성된 코드에서 외부 패키지 import 추출 (로컬 import 제외)
+function extractAllImports(allCode: Map<string, string>): string[] {
+  const imports = new Set<string>();
+  const importRegex = /(?:from\s+['"]|require\s*\(\s*['"])([^'"./][^'"]*)['"]/g;
+
+  for (const code of allCode.values()) {
+    let match: RegExpExecArray | null;
+    while ((match = importRegex.exec(code)) !== null) {
+      const raw = match[1];
+      // 스코프 패키지: @hookform/resolvers/zod → @hookform/resolvers
+      // 일반 패키지: next/navigation → next
+      let pkg: string;
+      if (raw.startsWith('@')) {
+        const parts = raw.split('/');
+        pkg = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : raw;
+      } else {
+        pkg = raw.split('/')[0];
+      }
+      imports.add(pkg);
+    }
+  }
+  return [...imports];
+}
+
 // 프레임워크별 빌드 필수 파일 — ideate에서 누락 시 generate에서 자동 보강
 const FRAMEWORK_REQUIRED_FILES: Record<string, FileEntry[]> = {
   'next.js': [
     { path: 'src/app/layout.tsx', type: 'page', description: '루트 레이아웃 (html, body, metadata, globals.css import)', order: 2, dependencies: ['src/app/globals.css'] },
     { path: 'src/app/globals.css', type: 'config', description: 'Tailwind CSS @import (base, components, utilities)', order: 3, dependencies: [] },
-    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 (paths alias 포함)', order: 1, dependencies: [] },
+    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 — compilerOptions.paths에 "@/*": ["./src/*"] 필수 포함', order: 1, dependencies: [] },
     { path: 'postcss.config.mjs', type: 'config', description: 'PostCSS + Tailwind 플러그인 설정', order: 1, dependencies: [] },
     { path: 'tailwind.config.ts', type: 'config', description: 'Tailwind CSS 설정 (content 경로 포함)', order: 1, dependencies: [] },
     { path: 'next.config.ts', type: 'config', description: 'Next.js 프레임워크 설정', order: 1, dependencies: [] },
     { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법, 기술 스택', order: 50, dependencies: [] },
   ],
   'express': [
-    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정', order: 1, dependencies: [] },
+    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 — paths alias 포함', order: 1, dependencies: [] },
     { path: 'src/index.ts', type: 'config', description: '서버 엔트리포인트 (Express app 시작)', order: 3, dependencies: [] },
     { path: '.env.example', type: 'config', description: '환경변수 예제 파일', order: 2, dependencies: [] },
     { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법', order: 50, dependencies: [] },
@@ -741,11 +765,29 @@ const FRAMEWORK_REQUIRED_FILES: Record<string, FileEntry[]> = {
     { path: 'src/main.tsx', type: 'config', description: 'React 엔트리포인트 (createRoot)', order: 2, dependencies: [] },
     { path: 'src/App.tsx', type: 'page', description: '루트 App 컴포넌트', order: 3, dependencies: [] },
     { path: 'vite.config.ts', type: 'config', description: 'Vite 빌드 설정', order: 1, dependencies: [] },
-    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정', order: 1, dependencies: [] },
+    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 — paths alias 포함', order: 1, dependencies: [] },
     { path: 'postcss.config.js', type: 'config', description: 'PostCSS + Tailwind 플러그인', order: 1, dependencies: [] },
     { path: 'tailwind.config.js', type: 'config', description: 'Tailwind CSS 설정', order: 1, dependencies: [] },
     { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법', order: 50, dependencies: [] },
   ],
+};
+
+// 프레임워크별 필수 devDependencies — import 스캔에 안 잡히는 빌드 도구
+const FRAMEWORK_REQUIRED_DEPS: Record<string, Record<string, string>> = {
+  'next.js': {
+    'tailwindcss': 'latest', 'postcss': 'latest', 'autoprefixer': 'latest',
+    '@types/node': 'latest', '@types/react': 'latest', '@types/react-dom': 'latest',
+    'eslint': 'latest', 'eslint-config-next': 'latest', 'typescript': 'latest',
+  },
+  'express': {
+    '@types/node': 'latest', '@types/express': 'latest', 'typescript': 'latest',
+    'tsx': 'latest', 'eslint': 'latest',
+  },
+  'react': {
+    'tailwindcss': 'latest', 'postcss': 'latest', 'autoprefixer': 'latest',
+    '@types/react': 'latest', '@types/react-dom': 'latest', 'typescript': 'latest',
+    '@vitejs/plugin-react': 'latest', 'eslint': 'latest',
+  },
 };
 
 function ensureRequiredFiles(files: FileEntry[], techStack: Record<string, unknown>): FileEntry[] {
@@ -855,6 +897,7 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
   // 파일 생성 루프
   const analysis = String(bp.analysis || '').slice(0, 4000);
   const foundationFiles: Map<string, string> = new Map(); // 기반 파일 전문 저장
+  const allGeneratedCode: Map<string, string> = new Map(); // 전체 파일 코드 (import 스캔용)
   const generatedSummary: string[] = []; // 나머지 파일 export 요약
   const generatedBlobs: Array<{ path: string; sha: string }> = [];
   const failedFiles: string[] = [];
@@ -875,6 +918,8 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
 - soft delete(deletedAt) 패턴을 사용하려면 스키마에 해당 컬럼이 반드시 정의되어 있어야 한다.
 - 패키지 버전은 2026년 3월 기준 최신 안정 버전을 사용하라.
 - import 경로, 필드명, 타입명은 아래 기반 파일과 100% 일치해야 한다.
+- package.json 생성 시: 코드에서 import/require하는 모든 외부 패키지를 dependencies 또는 devDependencies에 반드시 포함하라.
+- tsconfig.json 생성 시: compilerOptions.paths에 "@/*": ["./src/*"] path alias를 반드시 설정하라.
 
 너는 시니어 풀스택 개발자다. 요청된 파일의 코드만 출력. 설명 없이 코드만.
 
@@ -922,6 +967,9 @@ ${recentStr || '(아직 없음)'}`;
       } else { failedFiles.push(file.path); continue; }
     } catch { failedFiles.push(file.path); continue; }
 
+    // 전체 코드 저장 (import 스캔용)
+    allGeneratedCode.set(file.path, code);
+
     // 기반 파일은 전문 저장, 나머지는 export 요약
     if (isFoundationFile(file)) {
       foundationFiles.set(file.path, code);
@@ -936,6 +984,65 @@ ${recentStr || '(아직 없음)'}`;
   }
 
   if (generatedBlobs.length === 0) throw new Error('파일을 하나도 생성하지 못했습니다');
+
+  // === package.json 후처리: 누락 패키지 자동 추가 ===
+  const pkgCode = foundationFiles.get('package.json');
+  if (pkgCode) {
+    try {
+      const pkg = JSON.parse(pkgCode);
+      const deps = pkg.dependencies || {};
+      const devDeps = pkg.devDependencies || {};
+      const allExisting = new Set([...Object.keys(deps), ...Object.keys(devDeps)]);
+
+      // 1) 프레임워크 필수 devDependencies 주입
+      let techStackFramework = '';
+      try {
+        const ts = JSON.parse(String(bp.tech_stack || '{}'));
+        techStackFramework = String(ts.framework || '').toLowerCase();
+      } catch { /* 무시 */ }
+      const matchedFwKey = Object.keys(FRAMEWORK_REQUIRED_DEPS).find(k => techStackFramework.includes(k));
+      if (matchedFwKey) {
+        const requiredDev = FRAMEWORK_REQUIRED_DEPS[matchedFwKey];
+        for (const [depName, depVer] of Object.entries(requiredDev)) {
+          if (!allExisting.has(depName)) {
+            if (!pkg.devDependencies) pkg.devDependencies = {};
+            pkg.devDependencies[depName] = depVer;
+            allExisting.add(depName);
+          }
+        }
+      }
+
+      // 2) 전체 생성 코드에서 import 스캔 → 누락 패키지 추가
+      const scannedImports = extractAllImports(allGeneratedCode);
+      // Node.js 내장 모듈 제외
+      const builtins = new Set(['fs', 'path', 'crypto', 'http', 'https', 'url', 'util', 'stream', 'os', 'child_process', 'events', 'buffer', 'querystring', 'net', 'tls', 'dns', 'assert', 'zlib']);
+      for (const imp of scannedImports) {
+        if (builtins.has(imp) || imp.startsWith('node:')) continue;
+        if (!allExisting.has(imp)) {
+          if (!pkg.dependencies) pkg.dependencies = {};
+          pkg.dependencies[imp] = 'latest';
+          console.log(`[generate] 누락 패키지 추가: ${imp}`);
+        }
+      }
+
+      // 수정된 package.json blob 교체
+      const updatedPkgCode = JSON.stringify(pkg, null, 2);
+      const pkgBlobRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/blobs`, {
+        method: 'POST', headers: ghHeaders,
+        body: JSON.stringify({ content: Buffer.from(updatedPkgCode).toString('base64'), encoding: 'base64' }),
+      });
+      if (pkgBlobRes.ok) {
+        const bd = await pkgBlobRes.json();
+        const pkgIdx = generatedBlobs.findIndex(b => b.path === 'package.json');
+        if (pkgIdx !== -1) {
+          generatedBlobs[pkgIdx].sha = bd.sha;
+          console.log(`[generate] package.json blob 교체 완료`);
+        }
+      }
+    } catch (err) {
+      console.warn('[generate] package.json 후처리 실패 (계속 진행):', err);
+    }
+  }
 
   // Git Tree API 일괄 커밋
   console.log(`[generate] Git 커밋 시작 (${generatedBlobs.length}개 파일)...`);
