@@ -728,6 +728,8 @@ function extractAllImports(allCode: Map<string, string>): string[] {
     let match: RegExpExecArray | null;
     while ((match = importRegex.exec(code)) !== null) {
       const raw = match[1];
+      // @/ 로컬 path alias 제외 (@/lib/..., @/components/..., @/types/... 등)
+      if (raw.startsWith('@/')) continue;
       // 스코프 패키지: @hookform/resolvers/zod → @hookform/resolvers
       // 일반 패키지: next/navigation → next
       let pkg: string;
