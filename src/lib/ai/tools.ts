@@ -533,46 +533,71 @@ const IDEATE_PROMPT = (idea: string) => `다음 프로젝트 아이디어에 대
 
 아이디어: ${idea}
 
+두 가지를 모두 출력해야 합니다:
+
+**파트 1: 마크다운 보고서** (사람이 읽을 용도)
 아래 구조로 상세하게 작성하세요:
-
-## 1. 프로젝트 개요
-- 프로젝트명 제안 (영문 + 한글)
-- 한 줄 설명
-- 핵심 가치/차별점
-
-## 2. 시장/경쟁 분석
-- 유사 서비스 3개 분석
-- 차별화 포인트
-- 타겟 사용자
-
-## 3. 추천 기술 스택
-- 프론트엔드, 백엔드, DB, 배포 각각 추천 + 이유
-- 1인 개발자에게 적합한 선택인지 판단
-
-## 4. 아키텍처 설계
-- 시스템 구성도 (텍스트)
-- 주요 모듈/서비스 구분
-- 데이터 흐름
-
-## 5. 파일/폴더 구조
-\`\`\`
-프로젝트 루트 구조를 트리 형태로
-\`\`\`
-
-## 6. API 스펙
-- 주요 엔드포인트 목록 (메서드, 경로, 설명)
-- 인증 방식
-
-## 7. DB 스키마
-- 주요 테이블/컬렉션 설계
-
-## 8. 예상 개발 기간
-- MVP 기준 (주 단위)
-- 단계별 마일스톤
-
+## 1. 프로젝트 개요 (프로젝트명 영문+한글, 한 줄 설명, 핵심 가치)
+## 2. 시장/경쟁 분석 (유사 서비스 3개, 차별화, 타겟 사용자)
+## 3. 추천 기술 스택 (프론트/백엔드/DB/배포 + 이유)
+## 4. 아키텍처 설계 (시스템 구성, 모듈, 데이터 흐름)
+## 5. 파일/폴더 구조 (트리 형태)
+## 6. API 스펙 (엔드포인트 목록)
+## 7. DB 스키마 (주요 테이블)
+## 8. 예상 개발 기간 (MVP 주 단위)
 ## 9. 추가 아이디어 / 확장 가능성
-- MVP 이후 추가할 기능
-- 수익화 방안`;
+
+**파트 2: Structured JSON** (기계가 읽을 용도)
+마크다운 보고서 뒤에 반드시 아래 구분자 사이에 JSON을 출력하세요:
+
+---NEXUS_STRUCTURED_DATA_BEGIN---
+{
+  "project_name": "영문-프로젝트명",
+  "tech_stack": {
+    "runtime": "Node.js 20",
+    "framework": "Next.js 14 App Router",
+    "language": "TypeScript",
+    "database": "Supabase (PostgreSQL)",
+    "deployment": "Vercel",
+    "key_packages": ["패키지1", "패키지2"]
+  },
+  "architecture": {
+    "pattern": "아키텍처 패턴명",
+    "description": "아키텍처 설명",
+    "key_decisions": ["결정1", "결정2"]
+  },
+  "file_structure": [
+    {
+      "path": "package.json",
+      "type": "config",
+      "description": "프로젝트 의존성 정의",
+      "order": 1,
+      "dependencies": []
+    }
+  ],
+  "api_spec": [
+    {
+      "method": "GET",
+      "path": "/api/items",
+      "description": "아이템 목록 조회",
+      "request": {},
+      "response": { "items": "Item[]" }
+    }
+  ]
+}
+---NEXUS_STRUCTURED_DATA_END---
+
+file_structure order 규칙:
+- config 파일 (package.json, tsconfig 등): 1~5
+- 타입 정의 파일: 6~10
+- 유틸/라이브러리: 11~15
+- API 라우트: 16~25
+- 컴포넌트: 26~35
+- 페이지: 36~45
+- 기타 (README 등): 46~50
+
+각 파일의 dependencies에는 해당 파일이 import하는 다른 파일의 path를 적으세요.
+file_structure에는 프로젝트에 필요한 모든 파일을 빠짐없이 포함하세요.`;
 
 const projectIdeateTool: Tool = {
   name: 'project_ideate',
@@ -607,7 +632,7 @@ const projectIdeateTool: Tool = {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 8192,
+          max_tokens: 16384,
           system: IDEATE_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: IDEATE_PROMPT(idea) }],
         }),
@@ -619,19 +644,51 @@ const projectIdeateTool: Tool = {
       }
 
       const data = await res.json();
-      const report = data.content?.[0]?.text || '';
+      const fullText = data.content?.[0]?.text || '';
 
-      if (!report) return '설계 보고서 생성에 실패했습니다.';
+      if (!fullText) return '설계 보고서 생성에 실패했습니다.';
+
+      // structured JSON 파싱
+      const structuredMatch = fullText.match(
+        /---NEXUS_STRUCTURED_DATA_BEGIN---\s*([\s\S]*?)\s*---NEXUS_STRUCTURED_DATA_END---/
+      );
+      const report = fullText
+        .replace(/---NEXUS_STRUCTURED_DATA_BEGIN---[\s\S]*---NEXUS_STRUCTURED_DATA_END---/, '')
+        .trim();
+
+      let techStack: string | null = null;
+      let architecture: string | null = null;
+      let fileStructure: string | null = null;
+      let apiSpec: string | null = null;
+      let status = 'draft';
+
+      if (structuredMatch) {
+        try {
+          const structured = JSON.parse(structuredMatch[1]);
+          if (structured.tech_stack) techStack = JSON.stringify(structured.tech_stack);
+          if (structured.architecture) architecture = JSON.stringify(structured.architecture);
+          if (structured.file_structure) fileStructure = JSON.stringify(structured.file_structure);
+          if (structured.api_spec) apiSpec = JSON.stringify(structured.api_spec);
+          status = 'designed'; // structured 파싱 성공 시
+        } catch {
+          // JSON 파싱 실패 — graceful degradation, analysis만 저장
+          console.warn('Structured JSON 파싱 실패, analysis만 저장');
+        }
+      }
 
       // DB에 저장
       const db = getDb();
       const id = crypto.randomUUID();
       db.prepare(`
-        INSERT INTO project_blueprints (id, idea, analysis, status, created_at, updated_at)
-        VALUES (?, ?, ?, 'draft', datetime('now'), datetime('now'))
-      `).run(id, idea, report);
+        INSERT INTO project_blueprints (id, idea, analysis, tech_stack, architecture, file_structure, api_spec, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `).run(id, idea, report, techStack, architecture, fileStructure, apiSpec, status);
 
-      return `설계 보고서가 생성되었습니다 (ID: ${id}).\n\n${report}`;
+      const structuredInfo = fileStructure
+        ? `\n\n> 파일 구조 ${JSON.parse(fileStructure).length}개 파일 구조화 완료. 코드 생성 준비됨.`
+        : '\n\n> 구조화 데이터 없음. 코드 생성을 위해 설계를 다시 실행해주세요.';
+
+      return `설계 보고서가 생성되었습니다 (ID: ${id}).${structuredInfo}\n\n${report}`;
     } catch (error) {
       return `설계 보고서 생성 실패: ${error instanceof Error ? error.message : 'unknown'}`;
     }
