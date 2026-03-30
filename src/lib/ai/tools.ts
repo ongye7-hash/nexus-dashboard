@@ -538,11 +538,31 @@ const IDEATE_PROMPT = (idea: string) => `다음 프로젝트 아이디어에 대
 ## 2. 시장/경쟁 분석 (유사 서비스 3개, 차별화, 타겟 사용자)
 ## 3. 추천 기술 스택 (프론트/백엔드/DB/배포 + 이유)
 ## 4. 아키텍처 설계 (시스템 구성, 모듈, 데이터 흐름)
-## 5. 파일/폴더 구조 (트리 형태, 모든 파일 포함)
+## 5. 파일/폴더 구조 (트리 형태)
 ## 6. API 스펙 (엔드포인트 목록)
-## 7. DB 스키마 (주요 테이블, SQL 포함)
+## 7. DB 스키마 (주요 테이블)
 ## 8. 예상 개발 기간 (MVP 주 단위)
-## 9. 추가 아이디어 / 확장 가능성 + 수익화`;
+## 9. 추가 아이디어 / 확장 가능성 + 수익화
+
+보고서 작성이 끝나면, 반드시 아래 구분자 사이에 구조화 데이터를 JSON으로 추가하세요:
+
+---NEXUS_STRUCTURED_DATA_BEGIN---
+{
+  "project_name": "영문-프로젝트명",
+  "tech_stack": { "runtime": "", "framework": "", "language": "", "database": "", "deployment": "", "key_packages": [] },
+  "architecture": { "pattern": "", "description": "", "key_decisions": [] },
+  "file_structure": [
+    { "path": "파일경로", "type": "config|type|util|api|component|page|other", "description": "설명", "order": 1, "dependencies": [] }
+  ],
+  "api_spec": [
+    { "method": "GET", "path": "/api/...", "description": "설명" }
+  ]
+}
+---NEXUS_STRUCTURED_DATA_END---
+
+file_structure order 규칙: config=1~5, types=6~10, lib/util=11~15, api=16~25, components=26~35, pages=36~45, other=46~50
+file_structure에 프로젝트의 모든 파일을 빠짐없이 포함하세요.
+dependencies에는 해당 파일이 import하는 다른 파일의 path를 적으세요.`;
 
 const projectIdeateTool: Tool = {
   name: 'project_ideate',
@@ -567,87 +587,63 @@ const projectIdeateTool: Tool = {
     let apiKey: string;
     try { apiKey = decrypt(encryptedKey); } catch { return 'Claude API 키 복호화 실패.'; }
 
-    const claudeHeaders = {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    };
-
     try {
-      // === 1단계: 마크다운 보고서 생성 ===
-      const reportRes = await fetch('https://api.anthropic.com/v1/messages', {
+      // 1회 호출 — 보고서 + structured JSON 동시 생성
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: claudeHeaders,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 8192,
+          max_tokens: 16384,
           system: IDEATE_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: IDEATE_PROMPT(idea) }],
         }),
       });
 
-      if (!reportRes.ok) {
-        const err = await reportRes.json().catch(() => ({}));
-        return `Claude API 오류 (보고서): ${err.error?.message || reportRes.status}`;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return `Claude API 오류: ${err.error?.message || res.status}`;
       }
 
-      const reportData = await reportRes.json();
-      const report = reportData.content?.[0]?.text || '';
-      if (!report) return '설계 보고서 생성에 실패했습니다.';
+      const data = await res.json();
+      const fullText = data.content?.[0]?.text || '';
+      if (!fullText) return '설계 보고서 생성에 실패했습니다.';
 
-      // === 2단계: structured JSON 추출 ===
+      // 구분자로 보고서와 structured JSON 분리
+      const structMatch = fullText.match(
+        /---NEXUS_STRUCTURED_DATA_BEGIN---\s*([\s\S]*?)\s*---NEXUS_STRUCTURED_DATA_END---/
+      );
+      const report = fullText
+        .replace(/---NEXUS_STRUCTURED_DATA_BEGIN---[\s\S]*---NEXUS_STRUCTURED_DATA_END---/, '')
+        .trim();
+
       let techStack: string | null = null;
       let architecture: string | null = null;
       let fileStructure: string | null = null;
       let apiSpec: string | null = null;
       let status = 'draft';
 
-      try {
-        const structRes = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: claudeHeaders,
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 4096,
-            system: '아래 설계 보고서에서 structured JSON을 추출하라. JSON만 출력하고 다른 텍스트는 절대 포함하지 마.',
-            messages: [{ role: 'user', content: `다음 설계 보고서에서 structured JSON을 추출해주세요. JSON만 출력하세요.
-
-보고서:
-${report}
-
-추출할 JSON 구조:
-{
-  "project_name": "영문 프로젝트명",
-  "tech_stack": { "runtime": "", "framework": "", "language": "", "database": "", "deployment": "", "key_packages": [] },
-  "architecture": { "pattern": "", "description": "", "key_decisions": [] },
-  "file_structure": [
-    { "path": "파일경로", "type": "config|type|util|api|component|page|other", "description": "설명", "order": 1, "dependencies": [] }
-  ],
-  "api_spec": [
-    { "method": "GET", "path": "/api/...", "description": "설명" }
-  ]
-}
-
-file_structure order 규칙: config=1~5, types=6~10, lib/util=11~15, api=16~25, components=26~35, pages=36~45, other=46~50
-모든 파일을 빠짐없이 포함하세요.` }],
-          }),
-        });
-
-        if (structRes.ok) {
-          const structData = await structRes.json();
-          const jsonText = (structData.content?.[0]?.text || '').trim();
-          // JSON 블록 추출 (```json ... ``` 또는 순수 JSON)
-          const cleanJson = jsonText.replace(/^```json?\s*/i, '').replace(/\s*```$/, '').trim();
-          const structured = JSON.parse(cleanJson);
-
-          if (structured.tech_stack) techStack = JSON.stringify(structured.tech_stack);
-          if (structured.architecture) architecture = JSON.stringify(structured.architecture);
-          if (structured.file_structure) fileStructure = JSON.stringify(structured.file_structure);
-          if (structured.api_spec) apiSpec = JSON.stringify(structured.api_spec);
-          status = 'designed';
+      if (structMatch) {
+        try {
+          // 안전한 JSON 추출 — 첫 { 부터 마지막 } 까지
+          const jsonText = structMatch[1];
+          const firstBrace = jsonText.indexOf('{');
+          const lastBrace = jsonText.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1) {
+            const structured = JSON.parse(jsonText.substring(firstBrace, lastBrace + 1));
+            if (structured.tech_stack) techStack = JSON.stringify(structured.tech_stack);
+            if (structured.architecture) architecture = JSON.stringify(structured.architecture);
+            if (structured.file_structure) fileStructure = JSON.stringify(structured.file_structure);
+            if (structured.api_spec) apiSpec = JSON.stringify(structured.api_spec);
+            status = 'designed';
+          }
+        } catch (parseErr) {
+          console.warn('Structured JSON 파싱 실패 (graceful degradation):', parseErr);
         }
-      } catch (structErr) {
-        console.warn('Structured JSON 추출 실패 (graceful degradation):', structErr);
       }
 
       // DB에 저장
@@ -660,7 +656,7 @@ file_structure order 규칙: config=1~5, types=6~10, lib/util=11~15, api=16~25, 
 
       const structuredInfo = fileStructure
         ? `\n\n> 파일 구조 ${JSON.parse(fileStructure).length}개 파일 구조화 완료. 코드 생성 준비됨 (ID: ${id}).`
-        : `\n\n> 구조화 데이터 추출 실패. 보고서만 저장됨 (ID: ${id}).`;
+        : `\n\n> 구조화 데이터 없음. 보고서만 저장됨 (ID: ${id}).`;
 
       return `설계 보고서가 생성되었습니다.${structuredInfo}\n\n${report}`;
     } catch (error) {
