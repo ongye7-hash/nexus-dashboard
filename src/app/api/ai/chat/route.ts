@@ -256,8 +256,8 @@ export async function POST(request: NextRequest) {
         };
 
         let aborted = false;
-        // 클라이언트 연결 끊김 감지
-        request.signal.addEventListener('abort', () => { aborted = true; });
+        // 클라이언트 연결 끊김 감지 — 즉시 send 차단
+        request.signal.addEventListener('abort', () => { aborted = true; controllerClosed = true; });
 
         try {
           // 세션 ID를 첫 이벤트로 전송
@@ -332,7 +332,7 @@ export async function POST(request: NextRequest) {
                 let rejected = false;
 
                 for (let i = 0; i < APPROVAL_TIMEOUT; i++) {
-                  if (aborted) break;
+                  if (aborted || controllerClosed) break;
                   await new Promise(resolve => setTimeout(resolve, 1000));
                   const row = db.prepare('SELECT status FROM tool_approvals WHERE id = ?').get(approvalId) as { status: string } | undefined;
                   if (row?.status === 'approved') { approved = true; break; }
@@ -346,7 +346,12 @@ export async function POST(request: NextRequest) {
                     send({ type: 'tool_call', name: toolName, status: 'running' });
                   }, 10000);
                   try {
-                    toolResult = await executeTool(toolName, toolInput);
+                    toolResult = await Promise.race([
+                      executeTool(toolName, toolInput),
+                      new Promise<string>((_, reject) =>
+                        setTimeout(() => reject(new Error('도구 실행 시간 초과 (2분)')), 120000)
+                      ),
+                    ]);
                   } finally {
                     clearInterval(hb);
                   }
@@ -370,13 +375,18 @@ export async function POST(request: NextRequest) {
                 // 읽기 도구 → 즉시 실행 (heartbeat로 연결 유지)
                 send({ type: 'tool_call', name: toolName, status: 'running' });
 
-                // 긴 도구 실행 중 10초마다 heartbeat 전송 (nginx 타임아웃 방지)
                 const heartbeatInterval = setInterval(() => {
                   send({ type: 'tool_call', name: toolName, status: 'running' });
                 }, 10000);
 
                 try {
-                  toolResult = await executeTool(toolName, toolInput);
+                  // 2분 타임아웃 — 긴 도구(project_generate 등) 보호
+                  toolResult = await Promise.race([
+                    executeTool(toolName, toolInput),
+                    new Promise<string>((_, reject) =>
+                      setTimeout(() => reject(new Error('도구 실행 시간 초과 (2분)')), 120000)
+                    ),
+                  ]);
                 } finally {
                   clearInterval(heartbeatInterval);
                 }
@@ -390,6 +400,9 @@ export async function POST(request: NextRequest) {
                 content: toolResult,
               });
             }
+
+            // abort 후에는 결과 저장 스킵
+            if (aborted || controllerClosed) break;
 
             // tool_result를 메시지에 추가
             loopMessages.push({ role: 'user', content: toolResults });
