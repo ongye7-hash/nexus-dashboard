@@ -275,6 +275,16 @@ function initializeTables() {
     )
   `);
 
+  // project_blueprints 확장 컬럼 (안전하게 추가)
+  const bpColumns = database.prepare("PRAGMA table_info(project_blueprints)").all() as { name: string }[];
+  const bpColNames = new Set(bpColumns.map(c => c.name));
+  if (!bpColNames.has('repo_url')) {
+    database.exec("ALTER TABLE project_blueprints ADD COLUMN repo_url TEXT");
+  }
+  if (!bpColNames.has('generated_files')) {
+    database.exec("ALTER TABLE project_blueprints ADD COLUMN generated_files TEXT");
+  }
+
   // project_meta 확장 컬럼 (기존 테이블에 안전하게 추가)
   const columns = database.prepare("PRAGMA table_info(project_meta)").all() as { name: string }[];
   const colNames = new Set(columns.map(c => c.name));
