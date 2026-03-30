@@ -245,8 +245,14 @@ export async function POST(request: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        let controllerClosed = false;
         const send = (data: Record<string, unknown>) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          if (controllerClosed) return;
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            controllerClosed = true;
+          }
         };
 
         let aborted = false;
@@ -430,9 +436,10 @@ export async function POST(request: NextRequest) {
             }
           }
           const errMsg = error instanceof Error ? error.message : '스트리밍 중 오류가 발생했습니다';
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: errMsg })}\n\n`));
+          send({ type: 'error', message: errMsg });
         } finally {
-          controller.close();
+          controllerClosed = true;
+          try { controller.close(); } catch { /* 이미 닫힘 */ }
         }
       },
     });
