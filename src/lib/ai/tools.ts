@@ -719,8 +719,23 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
 
   let repoName: string;
   try {
-    const arch = bp.architecture ? JSON.parse(String(bp.architecture)) : {};
-    repoName = toRepoName(arch.project_name || String(bp.idea || '').slice(0, 30));
+    // structured JSON 각 필드에서 project_name 탐색
+    let projectName = '';
+    for (const col of ['architecture', 'tech_stack', 'api_spec']) {
+      if (bp[col]) {
+        try {
+          const parsed = JSON.parse(String(bp[col]));
+          if (parsed.project_name) { projectName = parsed.project_name; break; }
+        } catch { /* 무시 */ }
+      }
+    }
+    // fallback: idea에서 영문 단어 추출
+    if (!projectName) {
+      const ideaStr = String(bp.idea || '');
+      const englishMatch = ideaStr.match(/[a-zA-Z][a-zA-Z\s\-]+/);
+      projectName = englishMatch ? englishMatch[0].trim() : ideaStr.slice(0, 30);
+    }
+    repoName = toRepoName(projectName);
   } catch {
     repoName = toRepoName(String(bp.idea || 'project').slice(0, 30));
   }
@@ -826,6 +841,10 @@ ${contextStr || '(아직 없음)'}`;
 
     generatedSummary.push(`파일: ${file.path}\n${extractExports(code)}`);
     console.log(`[generate] [${i + 1}/${files.length}] ${file.path} 완료 (${code.length}자)`);
+
+    // 진행률 DB 업데이트
+    db.prepare("UPDATE project_blueprints SET generation_progress = ? WHERE id = ?")
+      .run(JSON.stringify({ current: i + 1, total: files.length, currentFile: file.path }), blueprintId);
   }
 
   if (generatedBlobs.length === 0) throw new Error('파일을 하나도 생성하지 못했습니다');
@@ -925,10 +944,10 @@ const checkGenerationTool: Tool = {
     let bp: Record<string, unknown> | undefined;
 
     if (input.blueprint_id) {
-      bp = db.prepare('SELECT id, idea, status, repo_url, generated_files, updated_at FROM project_blueprints WHERE id = ?')
+      bp = db.prepare('SELECT id, idea, status, repo_url, generated_files, generation_progress, updated_at FROM project_blueprints WHERE id = ?')
         .get(String(input.blueprint_id)) as Record<string, unknown> | undefined;
     } else {
-      bp = db.prepare('SELECT id, idea, status, repo_url, generated_files, updated_at FROM project_blueprints ORDER BY updated_at DESC LIMIT 1')
+      bp = db.prepare('SELECT id, idea, status, repo_url, generated_files, generation_progress, updated_at FROM project_blueprints ORDER BY updated_at DESC LIMIT 1')
         .get() as Record<string, unknown> | undefined;
     }
 
@@ -946,6 +965,13 @@ const checkGenerationTool: Tool = {
     result += `아이디어: ${String(bp.idea || '').slice(0, 100)}\n`;
     result += `상태: ${statusLabels[String(bp.status)] || bp.status}\n`;
     result += `업데이트: ${bp.updated_at}\n`;
+
+    if (bp.status === 'generating' && bp.generation_progress) {
+      try {
+        const prog = JSON.parse(String(bp.generation_progress));
+        result += `진행률: ${prog.current}/${prog.total} 파일 (현재: ${prog.currentFile})\n`;
+      } catch { /* 무시 */ }
+    }
 
     if (bp.repo_url) result += `GitHub: ${bp.repo_url}\n`;
 
