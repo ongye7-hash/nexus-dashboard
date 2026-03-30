@@ -349,7 +349,7 @@ export async function POST(request: NextRequest) {
                     toolResult = await Promise.race([
                       executeTool(toolName, toolInput),
                       new Promise<string>((_, reject) =>
-                        setTimeout(() => reject(new Error('도구 실행 시간 초과 (2분)')), 120000)
+                        setTimeout(() => reject(new Error('도구 실행 시간 초과 (5분)')), 300000)
                       ),
                     ]);
                   } finally {
@@ -384,7 +384,7 @@ export async function POST(request: NextRequest) {
                   toolResult = await Promise.race([
                     executeTool(toolName, toolInput),
                     new Promise<string>((_, reject) =>
-                      setTimeout(() => reject(new Error('도구 실행 시간 초과 (2분)')), 120000)
+                      setTimeout(() => reject(new Error('도구 실행 시간 초과 (5분)')), 300000)
                     ),
                   ]);
                 } finally {
