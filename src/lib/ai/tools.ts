@@ -5,6 +5,7 @@ import { getRegisteredProjects, getDeployTargets, getAllVPSServers, getVPSServer
 import { connectSSH, sshExec } from '@/lib/ssh';
 import { validateProjectPath } from '@/lib/path-validator';
 import { decrypt } from '@/lib/crypto';
+import crypto from 'crypto';
 
 // ============ Tool 인터페이스 ============
 
@@ -522,6 +523,121 @@ const getTrendsTool: Tool = {
   },
 };
 
+// 11. project_ideate — 프로젝트 아이디어 → 설계 보고서
+const IDEATE_SYSTEM_PROMPT = `너는 시니어 소프트웨어 아키텍트이자 제품 전략가다.
+사용자의 프로젝트 아이디어를 받아 상세한 설계 보고서를 작성한다.
+항상 한국어로 작성하고, 마크다운 포맷을 사용하라.
+실용적이고 구현 가능한 수준으로 작성하라. 1인 개발자 관점에서 현실적인 범위를 제안하라.`;
+
+const IDEATE_PROMPT = (idea: string) => `다음 프로젝트 아이디어에 대한 설계 보고서를 작성해주세요:
+
+아이디어: ${idea}
+
+아래 구조로 상세하게 작성하세요:
+
+## 1. 프로젝트 개요
+- 프로젝트명 제안 (영문 + 한글)
+- 한 줄 설명
+- 핵심 가치/차별점
+
+## 2. 시장/경쟁 분석
+- 유사 서비스 3개 분석
+- 차별화 포인트
+- 타겟 사용자
+
+## 3. 추천 기술 스택
+- 프론트엔드, 백엔드, DB, 배포 각각 추천 + 이유
+- 1인 개발자에게 적합한 선택인지 판단
+
+## 4. 아키텍처 설계
+- 시스템 구성도 (텍스트)
+- 주요 모듈/서비스 구분
+- 데이터 흐름
+
+## 5. 파일/폴더 구조
+\`\`\`
+프로젝트 루트 구조를 트리 형태로
+\`\`\`
+
+## 6. API 스펙
+- 주요 엔드포인트 목록 (메서드, 경로, 설명)
+- 인증 방식
+
+## 7. DB 스키마
+- 주요 테이블/컬렉션 설계
+
+## 8. 예상 개발 기간
+- MVP 기준 (주 단위)
+- 단계별 마일스톤
+
+## 9. 추가 아이디어 / 확장 가능성
+- MVP 이후 추가할 기능
+- 수익화 방안`;
+
+const projectIdeateTool: Tool = {
+  name: 'project_ideate',
+  description: '프로젝트 아이디어를 분석하고 상세한 설계 보고서를 생성한다. 시장 분석, 기술 스택 추천, 아키텍처 설계, 파일 구조, API 스펙을 포함한다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      idea: { type: 'string', description: '프로젝트 아이디어 설명' },
+    },
+    required: ['idea'],
+  },
+  permission: 'read',
+  async execute(input) {
+    const idea = String(input.idea || '').trim();
+    if (!idea) return '오류: 프로젝트 아이디어를 입력해주세요.';
+    if (idea.length > 2000) return '오류: 아이디어 설명이 너무 깁니다 (최대 2000자).';
+
+    // Claude API 키 가져오기
+    const encryptedKey = getSetting('claude_api_key');
+    if (!encryptedKey) return 'Claude API 키가 설정되지 않았습니다.';
+
+    let apiKey: string;
+    try { apiKey = decrypt(encryptedKey); } catch { return 'Claude API 키 복호화 실패.'; }
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8192,
+          system: IDEATE_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: IDEATE_PROMPT(idea) }],
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return `Claude API 오류: ${err.error?.message || res.status}`;
+      }
+
+      const data = await res.json();
+      const report = data.content?.[0]?.text || '';
+
+      if (!report) return '설계 보고서 생성에 실패했습니다.';
+
+      // DB에 저장
+      const db = getDb();
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO project_blueprints (id, idea, analysis, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'draft', datetime('now'), datetime('now'))
+      `).run(id, idea, report);
+
+      return `설계 보고서가 생성되었습니다 (ID: ${id}).\n\n${report}`;
+    } catch (error) {
+      return `설계 보고서 생성 실패: ${error instanceof Error ? error.message : 'unknown'}`;
+    }
+  },
+};
+
 // ============ Tool Registry ============
 
 export const TOOLS: Tool[] = [
@@ -535,6 +651,7 @@ export const TOOLS: Tool[] = [
   deployTriggerTool,
   n8nWorkflowToggleTool,
   getTrendsTool,
+  projectIdeateTool,
 ];
 
 // 도구의 permission 조회

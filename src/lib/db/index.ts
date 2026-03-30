@@ -245,6 +245,23 @@ function initializeTables() {
     )
   `);
 
+  // 프로젝트 블루프린트 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS project_blueprints (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      idea TEXT NOT NULL,
+      analysis TEXT,
+      architecture TEXT,
+      tech_stack TEXT,
+      file_structure TEXT,
+      api_spec TEXT,
+      status TEXT DEFAULT 'draft',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // 도구 실행 승인 테이블
   database.exec(`
     CREATE TABLE IF NOT EXISTS tool_approvals (
