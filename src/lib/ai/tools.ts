@@ -631,17 +631,34 @@ const projectIdeateTool: Tool = {
 
       try {
         const jsonText = await claudeCall(
-          'JSON만 출력하라. 마크다운, 설명, 주석 절대 금지. 순수 JSON 객체 하나만 출력.',
+          'JSON만 출력하라. 마크다운, 설명, 주석 절대 금지. 순수 JSON 객체 하나만 출력. file_structure는 핵심 파일 20개 이내로 제한.',
           IDEATE_JSON_PROMPT(idea, report),
-          4096
+          8192
         );
 
         if (jsonText) {
-          // 안전한 JSON 추출 — 첫 { ~ 마지막 }
+          // 안전한 JSON 추출 — 잘린 JSON 복구 포함
           const firstBrace = jsonText.indexOf('{');
           const lastBrace = jsonText.lastIndexOf('}');
           if (firstBrace !== -1 && lastBrace !== -1) {
-            const structured = JSON.parse(jsonText.substring(firstBrace, lastBrace + 1));
+            let jsonStr = jsonText.substring(firstBrace, lastBrace + 1);
+            let structured: Record<string, unknown>;
+            try {
+              structured = JSON.parse(jsonStr);
+            } catch {
+              // 잘린 JSON 복구 시도 — 열린 배열/객체 닫기
+              jsonStr = jsonStr
+                .replace(/,\s*$/, '')           // 마지막 쉼표 제거
+                .replace(/\[\s*$/, '[]')        // 빈 배열 닫기
+                .replace(/,\s*\{[^}]*$/, '')    // 불완전 객체 제거
+              ;
+              // 닫히지 않은 ] 과 } 추가
+              const openBrackets = (jsonStr.match(/\[/g) || []).length - (jsonStr.match(/\]/g) || []).length;
+              const openBraces = (jsonStr.match(/\{/g) || []).length - (jsonStr.match(/\}/g) || []).length;
+              jsonStr += ']'.repeat(Math.max(0, openBrackets)) + '}'.repeat(Math.max(0, openBraces));
+              structured = JSON.parse(jsonStr);
+            }
+
             if (structured.tech_stack) techStack = JSON.stringify(structured.tech_stack);
             if (structured.architecture) architecture = JSON.stringify(structured.architecture);
             if (structured.file_structure) fileStructure = JSON.stringify(structured.file_structure);
