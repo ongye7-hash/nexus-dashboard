@@ -59,6 +59,7 @@ interface ProjectModalProps {
   onUpdateDeployUrl?: (projectName: string, deployUrl: string) => void;
   groups?: ProjectGroup[];
   onUpdateGroup?: (projectName: string, groupId: string | undefined) => void;
+  onUnregister?: (project: Project) => void;
 }
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -111,8 +112,10 @@ export function ProjectModal({
   onUpdateDeployUrl,
   groups = [],
   onUpdateGroup,
+  onUnregister,
 }: ProjectModalProps) {
   const [copied, setCopied] = useState(false);
+  const [confirmUnregister, setConfirmUnregister] = useState(false);
   const [isEditingMemo, setIsEditingMemo] = useState(false);
   const [memo, setMemo] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1052,6 +1055,36 @@ export function ProjectModal({
                   )}
                 </div>
               </div>
+
+              {/* 등록 해제 (등록된 프로젝트만) */}
+              {project?.isRegistered && onUnregister && (
+                <div className="px-6 py-3 border-t border-[#27272a]">
+                  {confirmUnregister ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-red-400">정말 등록을 해제하시겠습니까?</span>
+                      <button
+                        onClick={() => { onUnregister(project); setConfirmUnregister(false); onClose(); }}
+                        className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg transition-colors"
+                      >
+                        해제
+                      </button>
+                      <button
+                        onClick={() => setConfirmUnregister(false)}
+                        className="px-3 py-1 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmUnregister(true)}
+                      className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                    >
+                      프로젝트 등록 해제
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* 하단 안내 - 모바일에서 숨김 */}
               <div className="hidden sm:block px-6 py-3 border-t border-[#27272a] bg-[#0f0f10]">

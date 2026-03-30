@@ -18,6 +18,7 @@ import {
   X,
   Sunrise,
   BarChart3,
+  Plus,
 } from 'lucide-react';
 import { Project, ProjectStatus, ProjectGroup, STATUS_LABELS, STATUS_COLORS } from '@/lib/types';
 import { ProjectCard } from '@/components/ProjectCard';
@@ -34,6 +35,7 @@ import EasterEggEffects from '@/components/EasterEggEffects';
 import { useEasterEggs } from '@/hooks/useEasterEggs';
 import TerminalEmbed from '@/components/Terminal';
 import { AIChatPanel } from '@/components/AIChatPanel';
+import { ProjectRegisterModal } from '@/components/ProjectRegisterModal';
 
 type ViewMode = 'codex' | 'grid' | 'list' | 'stats';
 type SortMode = 'recent' | 'lastOpened' | 'name' | 'type';
@@ -54,6 +56,7 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'github' | 'vps' | 'ai'>('github');
   const [globalTerminalOpen, setGlobalTerminalOpen] = useState(false);
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const { showToast } = useToast();
   const easterEggs = useEasterEggs();
 
@@ -655,6 +658,17 @@ export default function Home() {
                 <span className="hidden sm:inline">새로고침</span>
               </button>
 
+              {/* 프로젝트 등록 */}
+              {activeFilter !== 'ai-chat' && (
+                <button
+                  onClick={() => setRegisterModalOpen(true)}
+                  className="hidden sm:flex items-center gap-2 h-9 px-3 lg:px-4 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm text-white font-medium transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden lg:inline">등록</span>
+                </button>
+              )}
+
               {/* 커맨드 팔레트 버튼 */}
               <button
                 onClick={() => setCommandOpen(true)}
@@ -888,6 +902,18 @@ export default function Home() {
         onUpdateDeployUrl={handleUpdateDeployUrl}
         groups={groups}
         onUpdateGroup={handleUpdateGroup}
+        onUnregister={async (project) => {
+          try {
+            const res = await fetch(`/api/projects/register?projectPath=${encodeURIComponent(project.path)}`, { method: 'DELETE' });
+            if (res.ok) {
+              showToast(`${project.name} 등록이 해제되었습니다`, 'success');
+              fetchProjects();
+            }
+          } catch (error) {
+            console.error('등록 해제 실패:', error);
+            showToast('등록 해제에 실패했습니다', 'error');
+          }
+        }}
       />
 
       {/* 그룹 관리 모달 */}
@@ -912,6 +938,13 @@ export default function Home() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         initialTab={settingsTab}
+      />
+
+      {/* 프로젝트 등록 모달 */}
+      <ProjectRegisterModal
+        open={registerModalOpen}
+        onClose={() => setRegisterModalOpen(false)}
+        onSuccess={fetchProjects}
       />
 
       {/* 이스터에그 효과 */}
