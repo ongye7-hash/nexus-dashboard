@@ -11,6 +11,7 @@ import {
   Unlink,
   Zap,
   TrendingUp,
+  Globe,
 } from 'lucide-react';
 
 export default function AITab() {
@@ -40,10 +41,20 @@ export default function AITab() {
   const [trendsSaveSuccess, setTrendsSaveSuccess] = useState(false);
   const [trendsConfirmDelete, setTrendsConfirmDelete] = useState(false);
 
+  // proxy
+  const [proxyUrl, setProxyUrl] = useState('');
+  const [showProxy, setShowProxy] = useState(false);
+  const [proxySaving, setProxySaving] = useState(false);
+  const [proxyStatus, setProxyStatus] = useState<{ online: boolean } | null>(null);
+  const [proxyError, setProxyError] = useState<string | null>(null);
+  const [proxySaveSuccess, setProxySaveSuccess] = useState(false);
+  const [proxyConfirmDelete, setProxyConfirmDelete] = useState(false);
+
   useEffect(() => {
     checkStatus();
     checkN8nStatus();
     checkTrendsStatus();
+    checkProxyStatus();
   }, []);
 
   useEffect(() => {
@@ -63,6 +74,12 @@ export default function AITab() {
     const timer = setTimeout(() => setTrendsSaveSuccess(false), 2000);
     return () => clearTimeout(timer);
   }, [trendsSaveSuccess]);
+
+  useEffect(() => {
+    if (!proxySaveSuccess) return;
+    const timer = setTimeout(() => setProxySaveSuccess(false), 2000);
+    return () => clearTimeout(timer);
+  }, [proxySaveSuccess]);
 
   const checkStatus = async () => {
     setLoading(true);
@@ -217,6 +234,48 @@ export default function AITab() {
     } catch (error) {
       console.warn('Trends API 키 삭제 실패:', error);
       setTrendsError('Trends API 키 삭제에 실패했습니다');
+    }
+  };
+
+  const checkProxyStatus = async () => {
+    try {
+      const res = await fetch('/api/ai?action=proxyStatus');
+      const data = await res.json();
+      setProxyStatus(data);
+    } catch { setProxyStatus(null); }
+  };
+
+  const handleSaveProxy = async () => {
+    if (!proxyUrl.trim()) return;
+    setProxySaving(true);
+    setProxyError(null);
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'saveProxyUrl', proxyUrl: proxyUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) { setProxyUrl(''); setProxySaveSuccess(true); await checkProxyStatus(); }
+      else setProxyError(data.error || '저장 실패');
+    } catch (error) {
+      console.warn('Proxy URL 저장 실패:', error);
+      setProxyError('Proxy URL 저장에 실패했습니다');
+    } finally { setProxySaving(false); }
+  };
+
+  const handleDeleteProxy = async () => {
+    if (!proxyConfirmDelete) { setProxyConfirmDelete(true); return; }
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deleteProxyUrl' }),
+      });
+      if (res.ok) { setProxyConfirmDelete(false); await checkProxyStatus(); }
+    } catch (error) {
+      console.warn('Proxy URL 삭제 실패:', error);
+      setProxyError('Proxy URL 삭제에 실패했습니다');
     }
   };
 
@@ -482,6 +541,86 @@ export default function AITab() {
         {trendsError && (
           <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
             <p className="text-sm text-red-400">{trendsError}</p>
+          </div>
+        )}
+      </div>
+
+      {/* YouTube Proxy 섹션 */}
+      <div className="mt-6 pt-6 border-t border-[#27272a]">
+        <div className="flex items-center gap-2 mb-4">
+          <Globe className="w-4 h-4 text-sky-400" />
+          <span className="text-sm font-medium text-white">YouTube Proxy</span>
+        </div>
+
+        {proxyStatus?.online ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-[#0f0f10] rounded-lg">
+              <div className="w-10 h-10 rounded-full bg-sky-500/10 flex items-center justify-center">
+                <Globe className="w-5 h-5 text-sky-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-white">Residential Proxy</p>
+                <p className="text-xs text-zinc-500">링크 분석 시 프록시 경유</p>
+              </div>
+              <div className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded-full">
+                <Check className="w-3 h-3 text-green-400" />
+                <span className="text-xs text-green-400">설정됨</span>
+              </div>
+            </div>
+            <button
+              onClick={handleDeleteProxy}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                proxyConfirmDelete
+                  ? 'bg-red-600 hover:bg-red-500 text-white'
+                  : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10'
+              }`}
+            >
+              <Unlink className="w-4 h-4" />
+              {proxyConfirmDelete ? '정말 삭제하시겠습니까?' : 'Proxy 삭제'}
+            </button>
+            {proxyConfirmDelete && (
+              <button onClick={() => setProxyConfirmDelete(false)} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                취소
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="p-3 bg-[#0f0f10] rounded-lg">
+              <p className="text-sm text-zinc-300 mb-1">Proxy URL 입력</p>
+              <p className="text-xs text-zinc-500">VPS에서 YouTube 자막 추출 시 사용 (Residential만)</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              <input
+                type={showProxy ? 'text' : 'password'}
+                value={proxyUrl}
+                onChange={(e) => { setProxyUrl(e.target.value); setProxyError(null); }}
+                placeholder="http://user:pass@host:port"
+                className="flex-1 px-3 py-2 bg-[#0f0f10] border border-[#27272a] rounded-lg text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-sky-500 font-mono"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveProxy(); }}
+              />
+              <button
+                onClick={() => setShowProxy(!showProxy)}
+                className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                {showProxy ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button
+              onClick={handleSaveProxy}
+              disabled={!proxyUrl.trim() || proxySaving}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm text-white font-medium transition-colors"
+            >
+              {proxySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : proxySaveSuccess ? <Check className="w-4 h-4" /> : <Globe className="w-4 h-4" />}
+              {proxySaving ? '저장 중...' : proxySaveSuccess ? '저장 완료!' : '저장'}
+            </button>
+          </div>
+        )}
+
+        {proxyError && (
+          <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <p className="text-sm text-red-400">{proxyError}</p>
           </div>
         )}
       </div>

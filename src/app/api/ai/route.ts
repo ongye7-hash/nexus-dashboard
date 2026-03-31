@@ -251,6 +251,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ online: !!trendsKey });
     }
 
+    case 'proxyStatus': {
+      const proxyUrl = getSetting('youtube_proxy_url');
+      return NextResponse.json({ online: !!proxyUrl });
+    }
+
     default:
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   }
@@ -321,6 +326,19 @@ export async function POST(request: Request) {
 
     if (action === 'deleteTrendsKey') {
       deleteSetting('trends_api_key');
+      return NextResponse.json({ success: true });
+    }
+
+    // YouTube Proxy URL 저장
+    if (action === 'saveProxyUrl') {
+      const { proxyUrl } = body;
+      if (!proxyUrl) return NextResponse.json({ error: 'Proxy URL이 필요합니다' }, { status: 400 });
+      setSetting('youtube_proxy_url', encrypt(proxyUrl.trim()));
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === 'deleteProxyUrl') {
+      deleteSetting('youtube_proxy_url');
       return NextResponse.json({ success: true });
     }
 
