@@ -275,6 +275,24 @@ function initializeTables() {
     )
   `);
 
+  // 링크 분석 테이블
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS link_analyses (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      video_id TEXT,
+      title TEXT,
+      channel TEXT,
+      thumbnail TEXT,
+      transcript TEXT,
+      analysis TEXT,
+      tags TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // project_blueprints 확장 컬럼 (안전하게 추가)
   const bpColumns = database.prepare("PRAGMA table_info(project_blueprints)").all() as { name: string }[];
   const bpColNames = new Set(bpColumns.map(c => c.name));

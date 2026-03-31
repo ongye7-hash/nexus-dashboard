@@ -35,6 +35,7 @@ import EasterEggEffects from '@/components/EasterEggEffects';
 import { useEasterEggs } from '@/hooks/useEasterEggs';
 import TerminalEmbed from '@/components/Terminal';
 import { AIChatPanel } from '@/components/AIChatPanel';
+import LinkAnalyzerPanel from '@/components/LinkAnalyzerPanel';
 import { ProjectRegisterModal } from '@/components/ProjectRegisterModal';
 
 type ViewMode = 'codex' | 'grid' | 'list' | 'stats';
@@ -111,7 +112,7 @@ export default function Home() {
       }
 
       // 모달, 팔레트, AI 채팅이 열려있으면 다른 단축키 무시
-      if (selectedProject || commandOpen || groupManagerOpen || activeFilter === 'ai-chat') return;
+      if (selectedProject || commandOpen || groupManagerOpen || activeFilter === 'ai-chat' || activeFilter === 'link-analyzer') return;
 
       // Cmd/Ctrl + K: 커맨드 팔레트
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -502,6 +503,7 @@ export default function Home() {
 
   const getFilterTitle = () => {
     if (activeFilter === 'ai-chat') return 'AI 채팅';
+    if (activeFilter === 'link-analyzer') return '링크 분석';
     if (viewMode === 'codex') return 'Morning Codex';
     if (viewMode === 'stats') return '개발자 통계';
     switch (activeFilter) {
@@ -542,8 +544,8 @@ export default function Home() {
         activeFilter={activeFilter}
         onFilterChange={(filter) => {
           setActiveFilter(filter);
-          // AI 채팅은 별도 뷰이므로 전환 안 함
-          if (filter === 'ai-chat') return;
+          // 별도 뷰는 전환 안 함
+          if (filter === 'ai-chat' || filter === 'link-analyzer') return;
           // 필터 선택시 Codex 뷰에서 그리드 뷰로 전환
           if (viewMode === 'codex') {
             setViewMode('grid');
@@ -577,7 +579,7 @@ export default function Home() {
                 <h1 className="text-base lg:text-lg font-semibold text-white">
                   {getFilterTitle()}
                 </h1>
-                {activeFilter !== 'ai-chat' && (
+                {activeFilter !== 'ai-chat' && activeFilter !== 'link-analyzer' && (
                   <p className="text-xs lg:text-sm text-zinc-500">
                     {sortedProjects.length}개 프로젝트
                   </p>
@@ -659,7 +661,7 @@ export default function Home() {
               </button>
 
               {/* 프로젝트 등록 */}
-              {activeFilter !== 'ai-chat' && (
+              {activeFilter !== 'ai-chat' && activeFilter !== 'link-analyzer' && (
                 <button
                   onClick={() => setRegisterModalOpen(true)}
                   className="hidden sm:flex items-center gap-2 h-9 px-3 lg:px-4 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm text-white font-medium transition-colors"
@@ -686,7 +688,7 @@ export default function Home() {
         </header>
 
         {/* 통계 바 - Codex/Stats 뷰에서는 숨김 */}
-        {viewMode !== 'codex' && viewMode !== 'stats' && activeFilter !== 'ai-chat' && <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[#1f1f23]">
+        {viewMode !== 'codex' && viewMode !== 'stats' && activeFilter !== 'ai-chat' && activeFilter !== 'link-analyzer' && <div className="px-4 lg:px-8 py-4 lg:py-6 border-b border-[#1f1f23]">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
             <div className="flex items-center gap-3 lg:gap-4 p-3 lg:p-4 bg-[#18181b] rounded-xl border border-[#27272a]">
               <div className="p-2 lg:p-3 bg-indigo-500/10 rounded-lg">
@@ -729,7 +731,9 @@ export default function Home() {
 
         {/* 프로젝트 콘텐츠 */}
         <div className="p-4 lg:p-8">
-          {activeFilter === 'ai-chat' ? (
+          {activeFilter === 'link-analyzer' ? (
+            <LinkAnalyzerPanel />
+          ) : activeFilter === 'ai-chat' ? (
             <AIChatPanel />
           ) : loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

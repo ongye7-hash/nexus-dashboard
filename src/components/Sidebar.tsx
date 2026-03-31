@@ -25,6 +25,7 @@ import {
   FolderGit2 as GithubIcon,
   Server,
   MessageSquare,
+  Link2,
 } from 'lucide-react';
 
 interface ProjectGroup {
@@ -232,6 +233,18 @@ export function Sidebar({ activeFilter, onFilterChange, stats, allTags = [], gro
             >
               <MessageSquare className="w-4 h-4 flex-shrink-0" />
               {!collapsed && <span className="flex-1 text-left">AI 채팅</span>}
+            </button>
+            {/* 링크 분석 */}
+            <button
+              onClick={() => handleFilterChange('link-analyzer')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                activeFilter === 'link-analyzer'
+                  ? 'bg-cyan-500/10 text-cyan-400'
+                  : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+              }`}
+            >
+              <Link2 className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="flex-1 text-left">링크 분석</span>}
             </button>
           </div>
 

@@ -140,3 +140,18 @@ export const STATUS_COLORS: Record<ProjectStatus, string> = {
   archived: '#71717a',
   development: '#eab308',
 };
+
+export interface LinkAnalysis {
+  id: string;
+  url: string;
+  video_id: string | null;
+  title: string | null;
+  channel: string | null;
+  thumbnail: string | null;
+  transcript: string | null;
+  analysis: string | null;
+  tags: string | null;
+  status: 'pending' | 'analyzing' | 'done' | 'failed';
+  created_at: string;
+  updated_at: string;
+}
