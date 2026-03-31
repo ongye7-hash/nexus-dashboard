@@ -211,6 +211,11 @@ export async function POST(request: NextRequest) {
       messages.push(msg);
     }
 
+    // 마지막 메시지가 assistant면 제거 (API는 user로 끝나야 함)
+    while (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+      messages.pop();
+    }
+
     const systemPrompt = buildSystemPrompt(resolvedProjectPath);
     const tools = getToolSchemas();
     const MAX_TOOL_ROUNDS = 5;
