@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { extractVideoId, getVideoMetadata, getTranscript } from '@/lib/youtube';
+import { extractVideoId, getYouTubeData } from '@/lib/youtube';
 import { decrypt } from '@/lib/crypto';
 import { getSetting } from '@/lib/database';
 import crypto from 'crypto';
@@ -49,19 +49,13 @@ async function analyzeInBackground(id: string, videoId: string, url: string, api
   const db = getDb();
 
   try {
-    // 메타데이터 추출
-    const metadata = await getVideoMetadata(videoId);
-    const title = metadata.title;
-    const channel = metadata.channel;
-    const thumbnail = metadata.thumbnail;
-    const description = metadata.description;
+    // 메타데이터 + 자막 통합 추출 (getInfo() 1회 호출)
+    const { metadata, transcript } = await getYouTubeData(videoId);
+    const { title, channel, thumbnail, description } = metadata;
 
     db.prepare(`
       UPDATE link_analyses SET title = ?, channel = ?, thumbnail = ?, status = 'extracting', updated_at = datetime('now') WHERE id = ?
     `).run(title, channel, thumbnail, id);
-
-    // 자막 추출 (fallback 체인: youtubei.js → yt-dlp)
-    const transcript = await getTranscript(videoId);
 
     // 분석 컨텐츠 결정: 자막 있으면 자막, 없으면 제목+설명
     const hasTranscript = transcript.method !== 'none' && transcript.text.length > 50;
