@@ -1034,7 +1034,7 @@ ${recentStr || '(아직 없음)'}`;
         }
       }
 
-      // npm registry 검증 — 존재하지 않는 패키지 제거
+      // npm registry 검증 — 자동 추가 후보 검증
       if (candidatePackages.length > 0) {
         const validationResults = await Promise.all(
           candidatePackages.map(async (pkgName) => {
@@ -1053,6 +1053,34 @@ ${recentStr || '(아직 없음)'}`;
             console.log(`[generate] 누락 패키지 추가: ${name}`);
           } else {
             console.warn(`[generate] npm에 존재하지 않는 패키지 스킵: ${name}`);
+          }
+        }
+      }
+
+      // 원본 package.json의 패키지도 npm registry 검증 — 허위 패키지 제거
+      const allDepsToValidate = [
+        ...Object.keys(pkg.dependencies || {}),
+        ...Object.keys(pkg.devDependencies || {}),
+      ].filter(name => !builtins.has(name) && !name.startsWith('node:'));
+      const knownValid = new Set(Object.keys(FRAMEWORK_REQUIRED_DEPS[matchedFwKey || ''] || {}));
+      const unknownDeps = allDepsToValidate.filter(name => !knownValid.has(name));
+
+      if (unknownDeps.length > 0) {
+        const fullValidation = await Promise.all(
+          unknownDeps.map(async (pkgName) => {
+            try {
+              const res = await fetch(`https://registry.npmjs.org/${pkgName}`, { method: 'HEAD' });
+              return { name: pkgName, exists: res.ok };
+            } catch {
+              return { name: pkgName, exists: false };
+            }
+          })
+        );
+        for (const { name, exists } of fullValidation) {
+          if (!exists) {
+            if (pkg.dependencies?.[name]) delete pkg.dependencies[name];
+            if (pkg.devDependencies?.[name]) delete pkg.devDependencies[name];
+            console.warn(`[generate] 허위 패키지 제거: ${name}`);
           }
         }
       }
