@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Link2, Send, Trash2, ExternalLink, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { Link2, Send, Trash2, ExternalLink, Loader2, AlertCircle, Clock, Copy, Check, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { LinkAnalysis } from '@/lib/types';
@@ -15,10 +15,14 @@ export default function LinkAnalyzerPanel() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<LinkAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'recent' | 'score'>('recent');
+  const [copied, setCopied] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   const fetchAnalyses = useCallback(async () => {
     try {
-      const res = await fetch('/api/analyze-link?limit=50');
+      const sortParam = sortBy === 'score' ? '&sort=score' : '';
+      const res = await fetch(`/api/analyze-link?limit=50${sortParam}`);
       if (res.ok) {
         const data = await res.json();
         setAnalyses(data.analyses || []);
@@ -26,7 +30,7 @@ export default function LinkAnalyzerPanel() {
     } catch (err) {
       console.warn('분석 히스토리 로드 실패:', err);
     }
-  }, []);
+  }, [sortBy]);
 
   useEffect(() => { fetchAnalyses(); }, [fetchAnalyses]);
 
@@ -72,7 +76,6 @@ export default function LinkAnalyzerPanel() {
       setSelectedId(data.id);
       setSelectedAnalysis(null);
       await fetchAnalyses();
-      // 폴링이 자동으로 상태 업데이트 처리
     } catch (err) {
       setError(err instanceof Error ? err.message : '네트워크 오류');
     } finally {
@@ -82,6 +85,7 @@ export default function LinkAnalyzerPanel() {
 
   const handleSelect = async (id: string) => {
     setSelectedId(id);
+    setShowTranscript(false);
     try {
       const res = await fetch(`/api/analyze-link?id=${id}`);
       if (res.ok) {
@@ -111,11 +115,31 @@ export default function LinkAnalyzerPanel() {
     }
   };
 
+  const handleCopy = async () => {
+    if (!selectedAnalysis?.analysis) return;
+    try {
+      await navigator.clipboard.writeText(selectedAnalysis.analysis);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      console.warn('클립보드 복사 실패');
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleAnalyze();
     }
+  };
+
+  // 출처 URL 파싱
+  const getCitations = (): string[] => {
+    if (!selectedAnalysis?.search_data) return [];
+    try {
+      const data = JSON.parse(selectedAnalysis.search_data);
+      return data.citations || [];
+    } catch { return []; }
   };
 
   return (
@@ -159,6 +183,15 @@ export default function LinkAnalyzerPanel() {
             </div>
           )}
         </div>
+
+        {/* 정렬 토글 */}
+        <button
+          onClick={() => setSortBy(prev => prev === 'recent' ? 'score' : 'recent')}
+          className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800 rounded-lg transition-colors"
+        >
+          <ArrowUpDown size={12} />
+          {sortBy === 'recent' ? '최근순' : '점수순'}
+        </button>
 
         {/* 히스토리 목록 */}
         <div className="flex-1 overflow-y-auto space-y-2">
@@ -291,15 +324,27 @@ export default function LinkAnalyzerPanel() {
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-zinc-100">{selectedAnalysis.title}</h2>
                 <p className="text-sm text-zinc-400 mt-1">{selectedAnalysis.channel}</p>
-                <a
-                  href={selectedAnalysis.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 mt-2"
-                >
-                  <ExternalLink size={12} />
-                  YouTube에서 보기
-                </a>
+                <div className="flex items-center gap-3 mt-2">
+                  <a
+                    href={selectedAnalysis.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    <ExternalLink size={12} />
+                    YouTube에서 보기
+                  </a>
+                  {/* 마크다운 복사 버튼 */}
+                  {selectedAnalysis.analysis && (
+                    <button
+                      onClick={handleCopy}
+                      className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                    >
+                      {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                      {copied ? '복사됨' : '리포트 복사'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -374,6 +419,51 @@ export default function LinkAnalyzerPanel() {
               <div className="flex items-center gap-2 text-zinc-500 text-sm">
                 <Loader2 size={16} className="animate-spin" />
                 분석 결과를 불러오는 중...
+              </div>
+            )}
+
+            {/* 출처 URL 목록 */}
+            {(() => {
+              const citations = getCitations();
+              if (citations.length === 0) return null;
+              return (
+                <div className="mt-8 pt-6 border-t border-zinc-800">
+                  <h3 className="text-sm font-medium text-zinc-300 mb-3">참고 출처 ({citations.length}개)</h3>
+                  <div className="space-y-1">
+                    {citations.map((url, i) => (
+                      <a
+                        key={i}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 truncate"
+                      >
+                        <ExternalLink size={10} className="flex-shrink-0" />
+                        {url}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 원본 자막 토글 */}
+            {selectedAnalysis.transcript && (
+              <div className="mt-8 pt-6 border-t border-zinc-800">
+                <button
+                  onClick={() => setShowTranscript(!showTranscript)}
+                  className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  {showTranscript ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  원본 자막 보기 ({selectedAnalysis.transcript.length.toLocaleString()}자)
+                </button>
+                {showTranscript && (
+                  <div className="mt-3 p-4 bg-zinc-800/50 rounded-lg max-h-96 overflow-y-auto">
+                    <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
+                      {selectedAnalysis.transcript}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
