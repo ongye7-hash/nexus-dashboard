@@ -1,30 +1,46 @@
 # 현재 진행 상태
 
 ## 완료
-- Phase 0~7: n8n 보안, INFLUX 블로그/SEO, AI 채팅, 트렌드 피드, 프로젝트 등록 UI
-- Chapter 8a: project_ideate (2회 호출 — 보고서 + structured JSON)
-- Chapter 8b: ✅ 코드 생성 파이프라인 완성
-  - 템플릿 시스템 (설정 파일 빌드 보장) + 비즈니스 로직만 Claude 생성
-  - 후처리: import 스캔, npm 검증, 허위 패키지 대체, 2차 생성
-  - 빌드 결과: 설정 에러 0, 비즈니스 로직 타입 불일치 1건 (수동 수정 수준)
-- n8n Health Monitor: ✅ 완료 (5분 간격, 텔레그램 알림)
-- INFLUX 트렌드 프롬프트: ✅ 수정 완료
-- 배치 보강: 44/50 완료 (잔여 7개)
-- 채팅 버그 수정: assistant message prefill 에러
-- README + 아키텍처 문서: ✅ 작성 완료
+- Phase 0~8b: n8n 보안, INFLUX, AI 채팅, 트렌드, 프로젝트 등록/설계/생성
+- Chapter 8b: 코드 생성 파이프라인 완성 (템플릿 시스템)
+- 링크 분석 MVP: 구현+배포 완료
+- 링크 분석 자막 수정: Piped API 1순위 + 다중 fallback 구현 완료
 
-## 장기 개선 항목
-- 코드 생성 속도 개선 (병렬 API 호출)
-- 빌드-수정 루프 (생성 후 자동 빌드 → 에러 자동 수정)
-- Chapter 8c: 자동 배포
+## 링크 분석 자막 — 현재 상태
+### 해결한 문제
+- VPS 데이터센터 IP에서 YouTube 봇 차단 → Piped API로 우회
+- getBasicInfo() → getInfo() 변경 (자막 추출 가능)
+- oEmbed 제거 → getInfo() 하나로 통합
 
-## 다음 세션 방향
-- 방향 확정: B → C (Nexus를 무기로 SaaS 런칭 → Nexus 자체 제품화)
-- SaaS 1개 선정 → 설계 → 코드 생성 → Vercel 배포 → 런칭
-- 후보: Status Page as a Service (1순위) / Changelog 자동 생성 / AI 코드 리뷰 봇
+### 최종 fallback 체인 (구현 완료, 배포+테스트 대기)
+1. Piped API (3개 인스턴스: kavin.rocks, piped.yt, lunar.icu)
+2. youtubei.js getInfo() (WEB → TV_EMBEDDED)
+3. yt-dlp
+4. 제목+설명만 분석
+
+### 커밋 이력
+- 05a3eec: getBasicInfo→getInfo, oEmbed 제거
+- b0a3331: 다중 클라이언트 + HTML 파싱 fallback
+- (다음): Piped API 1순위 구현 — 빌드 성공, push+배포 대기
+
+### 배포 후 테스트
+- VPS: `git pull && cd deploy && docker compose -f docker-compose.prod.yml up -d --build`
+- 테스트 URL: https://www.youtube.com/watch?v=TJ3uAYxPY5k
+- 로그: `docker logs deploy-nexus-1 --tail 80`
+- 확인: `[piped] 메타데이터 성공` + `[piped] 자막 성공` 로그 나오는지
+
+## 링크 분석 — 다음 구현 순서
+1. ~~자막 추출 수정~~ → 완료
+2. 사업성 점수 시스템 (1~100점)
+3. "이 아이디어로 프로젝트 생성" 버튼
+4. 유사 아이디어 감지
+5. 트위터/X 지원
+
+## 방향
+- B → C (Nexus로 SaaS 런칭 → Nexus 자체 제품화)
 
 ## 운영 정보
 - VPS: 146.190.50.42 (2GB RAM + 2GB swap)
-- Nexus: https://ongye.org
+- Nexus: https://ongye.org | 최신 커밋: push 대기
 - INFLUX: https://www.influx-lab.com
 - n8n: https://n8n.ongye.org
