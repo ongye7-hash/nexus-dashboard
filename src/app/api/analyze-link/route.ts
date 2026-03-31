@@ -42,7 +42,6 @@ const STEP3_PROMPT = (title: string, channel: string, transcript: string, step1R
 아래 영상 자막과 실시간 시장 조사 데이터를 기반으로, 투자 판단이 가능한 수준의 분석 리포트를 작성하라.
 추정치는 반드시 "추정"으로 명시하고, 실제 데이터가 있으면 출처를 밝혀라.
 항상 한국어로 작성하라.
-전체 리포트를 20,000자 이내로 작성하라. 핵심 수치와 결론 위주로 간결하게. 불필요한 반복이나 장황한 설명은 생략하라.
 
 오늘 날짜: ${today()}
 
@@ -145,12 +144,17 @@ ${step3Result.slice(0, 30000)}
 // Claude API 호출 헬퍼
 // ============================================================
 
-async function callClaude(
+interface ClaudeResponse {
+  text: string;
+  stop_reason: string;
+}
+
+async function callClaudeRaw(
   apiKey: string,
   model: string,
-  prompt: string,
+  messages: Array<{ role: string; content: string }>,
   maxTokens: number
-): Promise<string> {
+): Promise<ClaudeResponse> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -158,11 +162,7 @@ async function callClaude(
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+    body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
   });
 
   if (!res.ok) {
@@ -171,7 +171,38 @@ async function callClaude(
   }
 
   const data = await res.json();
-  return data.content?.[0]?.text || '';
+  return {
+    text: data.content?.[0]?.text || '',
+    stop_reason: data.stop_reason || 'end_turn',
+  };
+}
+
+/**
+ * Claude API 호출 + 잘림 시 자동 이어쓰기 (최대 1회)
+ */
+async function callClaude(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  maxTokens: number
+): Promise<string> {
+  const messages = [{ role: 'user', content: prompt }];
+  const result = await callClaudeRaw(apiKey, model, messages, maxTokens);
+
+  // 잘리지 않았으면 바로 반환
+  if (result.stop_reason !== 'max_tokens') {
+    return result.text;
+  }
+
+  // 잘렸으면 이어쓰기 1회
+  console.log(`[analyze] 응답 잘림 감지 (${result.text.length}자), 이어쓰기 시도`);
+  const continuation = await callClaudeRaw(apiKey, model, [
+    ...messages,
+    { role: 'assistant', content: result.text },
+    { role: 'user', content: '리포트가 잘렸다. 잘린 부분부터 이어서 완성해라. 이전 내용을 반복하지 마라.' },
+  ], 32000);
+
+  return result.text + '\n' + continuation.text;
 }
 
 // ============================================================
@@ -313,7 +344,7 @@ async function analyzeInBackground(id: string, videoId: string, url: string, api
         apiKey,
         'claude-opus-4-6',
         STEP3_PROMPT(title, channel, analysisContent, step1Raw, step2Result),
-        32000
+        128000
       );
     } catch (err) {
       // Opus 실패 → Sonnet fallback
@@ -332,7 +363,7 @@ async function analyzeInBackground(id: string, videoId: string, url: string, api
     updateStatus(db, id, 'step4_scoring');
     console.log(`[analyze] ${id}: Step 4 — 점수 산출 (Sonnet)`);
 
-    const step4Result = await callClaude(apiKey, 'claude-sonnet-4-6', STEP4_PROMPT(step3Result), 4000);
+    const step4Result = await callClaude(apiKey, 'claude-sonnet-4-6', STEP4_PROMPT(step3Result), 16000);
 
     // SCORE_JSON 파싱
     let businessScore: number | null = null;
