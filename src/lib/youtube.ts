@@ -67,10 +67,24 @@ function createProxiedFetch(): typeof fetch | undefined {
   const agent = new ProxyAgent(proxyUrl);
 
   return ((input: string | URL | Request, init?: RequestInit) => {
-    return undiciFetch(input as Parameters<typeof undiciFetch>[0], {
-      ...(init as Parameters<typeof undiciFetch>[1]),
+    // undici.fetch는 Request 객체를 직접 못 받음 — URL 문자열로 변환
+    if (input instanceof Request) {
+      const headers: Record<string, string> = {};
+      input.headers.forEach((v, k) => { headers[k] = v; });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return undiciFetch(input.url as any, {
+        method: input.method,
+        headers,
+        body: input.body as any,
+        ...((init || {}) as any),
+        dispatcher: agent,
+      } as any);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return undiciFetch(input as any, {
+      ...((init || {}) as any),
       dispatcher: agent,
-    });
+    } as any);
   }) as unknown as typeof fetch;
 }
 
