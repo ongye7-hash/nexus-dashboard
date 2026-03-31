@@ -1076,11 +1076,100 @@ ${recentStr || '(아직 없음)'}`;
             }
           })
         );
+        const fakePackages: string[] = [];
         for (const { name, exists } of fullValidation) {
           if (!exists) {
             if (pkg.dependencies?.[name]) delete pkg.dependencies[name];
             if (pkg.devDependencies?.[name]) delete pkg.devDependencies[name];
+            fakePackages.push(name);
             console.warn(`[generate] 허위 패키지 제거: ${name}`);
+          }
+        }
+
+        // 허위 패키지 → 대체 구현 자동 생성 + import 경로 교체
+        if (fakePackages.length > 0) {
+          for (const fakePkg of fakePackages) {
+            // 해당 패키지를 import하는 파일과 컴포넌트명 추출
+            const affectedFiles: Array<{ filePath: string; components: string[]; fullImportLine: string }> = [];
+
+            for (const [filePath, code] of allGeneratedCode.entries()) {
+              let m: RegExpExecArray | null;
+              const regex = new RegExp(`import\\s*\\{([^}]+)\\}\\s*from\\s*['"]${fakePkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\/[^'"]*)?['"]`, 'g');
+              while ((m = regex.exec(code)) !== null) {
+                const components = m[1].split(',').map(c => c.trim()).filter(Boolean);
+                affectedFiles.push({ filePath, components, fullImportLine: m[0] });
+              }
+            }
+
+            if (affectedFiles.length === 0) continue;
+
+            // 고유 컴포넌트 목록
+            const allComponents = [...new Set(affectedFiles.flatMap(f => f.components))];
+            const localModuleName = fakePkg.split('/').pop()?.replace(/^react-/, '') || 'ui-component';
+            const localPath = `src/components/ui/${localModuleName}.tsx`;
+            const localImport = `@/components/ui/${localModuleName}`;
+
+            console.log(`[generate] 허위 패키지 대체: ${fakePkg} → ${localPath} (컴포넌트: ${allComponents.join(', ')})`);
+
+            // Claude API로 대체 구현 생성
+            try {
+              const res = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-api-key': claudeKey, 'anthropic-version': '2023-06-01' },
+                body: JSON.stringify({
+                  model: 'claude-sonnet-4-6', max_tokens: 4096,
+                  system: '너는 시니어 React 개발자다. 요청된 컴포넌트를 Tailwind CSS만으로 구현하라. 외부 패키지 없이. TypeScript + props 타입 포함. 코드만 출력.',
+                  messages: [{ role: 'user', content: `다음 컴포넌트들을 하나의 파일에 구현해줘 (export 포함):\n${allComponents.map(c => `- ${c}`).join('\n')}\n\n원래 패키지: ${fakePkg}\nTailwind CSS로 동일한 UI를 구현하라.` }],
+                }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                const replacementCode = stripCodeFence(data.content?.[0]?.text || '');
+                if (replacementCode) {
+                  // 대체 파일 blob 생성
+                  const blobRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/blobs`, {
+                    method: 'POST', headers: ghHeaders,
+                    body: JSON.stringify({ content: Buffer.from(replacementCode).toString('base64'), encoding: 'base64' }),
+                  });
+                  if (blobRes.ok) {
+                    const bd = await blobRes.json();
+                    generatedBlobs.push({ path: localPath, sha: bd.sha });
+                    allGeneratedCode.set(localPath, replacementCode);
+                    console.log(`[generate] 대체 파일 생성: ${localPath} (${replacementCode.length}자)`);
+                  }
+
+                  // import 경로 교체 + 해당 파일 blob 교체
+                  for (const affected of affectedFiles) {
+                    let updatedCode = allGeneratedCode.get(affected.filePath);
+                    if (!updatedCode) continue;
+
+                    // import 문 교체: from '패키지명/...' → from '@/components/ui/...'
+                    const replaceRegex = new RegExp(
+                      `from\\s*['"]${fakePkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\/[^'"]*)?['"]`,
+                      'g'
+                    );
+                    updatedCode = updatedCode.replace(replaceRegex, `from '${localImport}'`);
+                    allGeneratedCode.set(affected.filePath, updatedCode);
+
+                    // blob 교체
+                    const newBlobRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/blobs`, {
+                      method: 'POST', headers: ghHeaders,
+                      body: JSON.stringify({ content: Buffer.from(updatedCode).toString('base64'), encoding: 'base64' }),
+                    });
+                    if (newBlobRes.ok) {
+                      const nbd = await newBlobRes.json();
+                      const idx = generatedBlobs.findIndex(b => b.path === affected.filePath);
+                      if (idx !== -1) {
+                        generatedBlobs[idx].sha = nbd.sha;
+                        console.log(`[generate] import 교체: ${affected.filePath} (${fakePkg} → ${localImport})`);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`[generate] 허위 패키지 대체 실패: ${fakePkg}`, err);
+            }
           }
         }
       }
