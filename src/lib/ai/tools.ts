@@ -575,7 +575,12 @@ file_structure 규칙:
 - Next.js: src/app/layout.tsx (루트 레이아웃, 없으면 빌드 불가), src/app/globals.css (Tailwind @import), tsconfig.json, postcss.config.js (또는 postcss.config.mjs), tailwind.config.ts (또는 tailwind.config.js), .eslintrc.json (또는 eslint.config.js/mjs), next.config.js (또는 next.config.mjs/ts), README.md
 - Express/Fastify: tsconfig.json, src/index.ts (엔트리포인트), .env.example, README.md
 - React (Vite): index.html, src/main.tsx, src/App.tsx, vite.config.ts, tsconfig.json, postcss.config.js, tailwind.config.js, README.md
-이 파일들은 20개 제한에 포함되며, 절대 생략하지 마라.`;
+이 파일들은 20개 제한에 포함되며, 절대 생략하지 마라.
+
+[필수] 파일 크기 제한:
+- 한 파일은 300줄 이내로 설계하라. 300줄을 초과할 것 같으면 컴포넌트/유틸로 분리하라.
+- 예: 대시보드 페이지가 복잡하면 MonitorCard, StatusBadge 등 하위 컴포넌트로 분리.
+- 페이지 컴포넌트(page.tsx)는 레이아웃과 데이터 패칭만 담당, UI는 별도 컴포넌트에 위임.`;
 
 const projectIdeateTool: Tool = {
   name: 'project_ideate',
@@ -922,6 +927,10 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
 - import 경로, 필드명, 타입명은 아래 기반 파일과 100% 일치해야 한다.
 - package.json 생성 시: 코드에서 import/require하는 모든 외부 패키지를 dependencies 또는 devDependencies에 반드시 포함하라.
 - tsconfig.json 생성 시: compilerOptions.paths에 "@/*": ["./src/*"] path alias를 반드시 설정하라.
+- 한 파일은 300줄 이내로 작성하라. 복잡한 UI는 하위 컴포넌트로 분리하고, 페이지는 레이아웃+데이터만 담당.
+- React hooks(useState, useEffect 등), onClick 이벤트 핸들러, 브라우저 API를 사용하는 파일은 최상단에 반드시 'use client' 선언.
+- npm에 실제로 존재하는 패키지만 import하라. 존재 여부가 불확실하면 직접 구현하라.
+- file_structure에 정의된 파일만 import하라. 정의되지 않은 @/ 경로를 사용하지 마라.
 
 너는 시니어 풀스택 개발자다. 요청된 파일의 코드만 출력. 설명 없이 코드만.
 
@@ -941,7 +950,7 @@ ${recentStr || '(아직 없음)'}`;
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': claudeKey, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6', max_tokens: 8192, system: systemPrompt,
+            model: 'claude-sonnet-4-6', max_tokens: 12288, system: systemPrompt,
             messages: [{ role: 'user', content: `파일 생성: ${file.path}\n역할: ${file.description}` }],
           }),
         });
@@ -1016,14 +1025,51 @@ ${recentStr || '(아직 없음)'}`;
 
       // 2) 전체 생성 코드에서 import 스캔 → 누락 패키지 추가
       const scannedImports = extractAllImports(allGeneratedCode);
-      // Node.js 내장 모듈 제외
       const builtins = new Set(['fs', 'path', 'crypto', 'http', 'https', 'url', 'util', 'stream', 'os', 'child_process', 'events', 'buffer', 'querystring', 'net', 'tls', 'dns', 'assert', 'zlib']);
+      const candidatePackages: string[] = [];
       for (const imp of scannedImports) {
         if (builtins.has(imp) || imp.startsWith('node:')) continue;
         if (!allExisting.has(imp)) {
-          if (!pkg.dependencies) pkg.dependencies = {};
-          pkg.dependencies[imp] = 'latest';
-          console.log(`[generate] 누락 패키지 추가: ${imp}`);
+          candidatePackages.push(imp);
+        }
+      }
+
+      // npm registry 검증 — 존재하지 않는 패키지 제거
+      if (candidatePackages.length > 0) {
+        const validationResults = await Promise.all(
+          candidatePackages.map(async (pkgName) => {
+            try {
+              const res = await fetch(`https://registry.npmjs.org/${pkgName}`, { method: 'HEAD' });
+              return { name: pkgName, exists: res.ok };
+            } catch {
+              return { name: pkgName, exists: false };
+            }
+          })
+        );
+        for (const { name, exists } of validationResults) {
+          if (exists) {
+            if (!pkg.dependencies) pkg.dependencies = {};
+            pkg.dependencies[name] = 'latest';
+            console.log(`[generate] 누락 패키지 추가: ${name}`);
+          } else {
+            console.warn(`[generate] npm에 존재하지 않는 패키지 스킵: ${name}`);
+          }
+        }
+      }
+
+      // 3) 참조 무결성 검사 — @/ import가 생성된 파일에 존재하는지 확인
+      const generatedPaths = new Set([...allGeneratedCode.keys()].map(p => p.toLowerCase()));
+      for (const [filePath, code] of allGeneratedCode.entries()) {
+        const localImportRegex = /(?:from\s+['"]|require\s*\(\s*['"])(@\/[^'"]+)['"]/g;
+        let localMatch: RegExpExecArray | null;
+        while ((localMatch = localImportRegex.exec(code)) !== null) {
+          const importPath = localMatch[1].replace('@/', 'src/');
+          // 확장자 없는 import도 체크 (.ts, .tsx, /index.ts 등)
+          const candidates = [importPath, `${importPath}.ts`, `${importPath}.tsx`, `${importPath}/index.ts`, `${importPath}/index.tsx`];
+          const found = candidates.some(c => generatedPaths.has(c.toLowerCase()));
+          if (!found) {
+            console.warn(`[generate] 참조 무결성 경고: ${filePath} → ${localMatch[1]} (파일 미존재)`);
+          }
         }
       }
 
