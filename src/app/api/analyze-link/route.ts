@@ -5,16 +5,16 @@ import { decrypt } from '@/lib/crypto';
 import { getSetting } from '@/lib/database';
 import crypto from 'crypto';
 
-const ANALYSIS_PROMPT = (title: string, channel: string, transcript: string) => `너는 비즈니스 분석가이자 스타트업 전략가다.
-아래 YouTube 영상의 자막을 분석하고, 비즈니스 관점에서 인사이트를 추출하라.
+const ANALYSIS_PROMPT = (title: string, channel: string, content: string, hasTranscript: boolean) => `너는 비즈니스 분석가이자 스타트업 전략가다.
+아래 YouTube 영상${hasTranscript ? '의 자막' : '의 제목과 설명'}을 분석하고, 비즈니스 관점에서 인사이트를 추출하라.
 항상 한국어로 작성하라.
 
 영상 정보:
 - 제목: ${title}
 - 채널: ${channel}
 
-자막:
-${transcript.slice(0, 8000)}
+${hasTranscript ? '자막' : '영상 설명'}:
+${content.slice(0, 8000)}
 
 아래 형식으로 분석하라:
 
@@ -44,7 +44,84 @@ ${transcript.slice(0, 8000)}
 ## 태그
 (관련 키워드를 JSON 배열로 출력. 예: ["SaaS", "AI", "자동화"])`;
 
-// POST — 링크 분석 실행
+// 백그라운드 분석 함수
+async function analyzeInBackground(id: string, videoId: string, url: string, apiKey: string): Promise<void> {
+  const db = getDb();
+
+  try {
+    // 메타데이터 추출
+    const metadata = await getVideoMetadata(videoId);
+    const title = metadata.title;
+    const channel = metadata.channel;
+    const thumbnail = metadata.thumbnail;
+    const description = metadata.description;
+
+    db.prepare(`
+      UPDATE link_analyses SET title = ?, channel = ?, thumbnail = ?, status = 'extracting', updated_at = datetime('now') WHERE id = ?
+    `).run(title, channel, thumbnail, id);
+
+    // 자막 추출 (fallback 체인: youtubei.js → yt-dlp)
+    const transcript = await getTranscript(videoId);
+
+    // 분석 컨텐츠 결정: 자막 있으면 자막, 없으면 제목+설명
+    const hasTranscript = transcript.method !== 'none' && transcript.text.length > 50;
+    const analysisContent = hasTranscript
+      ? transcript.text
+      : `제목: ${title}\n설명: ${description}`;
+
+    if (hasTranscript) {
+      db.prepare(`UPDATE link_analyses SET transcript = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(transcript.text, id);
+    }
+
+    db.prepare(`UPDATE link_analyses SET status = 'analyzing', updated_at = datetime('now') WHERE id = ?`).run(id);
+    console.log(`[analyze] ${id}: ${hasTranscript ? `자막 ${transcript.method} (${transcript.text.length}자)` : '제목+설명만 분석'}`);
+
+    // Claude API 분석
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: ANALYSIS_PROMPT(title, channel, analysisContent, hasTranscript) }],
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Claude API ${res.status}`);
+    }
+
+    const data = await res.json();
+    const analysis = data.content?.[0]?.text || '';
+
+    // 태그 추출
+    let tags: string | null = null;
+    const tagMatch = analysis.match(/\[[\s\S]*?\]/);
+    if (tagMatch) {
+      try {
+        const parsed = JSON.parse(tagMatch[0]);
+        if (Array.isArray(parsed)) tags = JSON.stringify(parsed);
+      } catch { /* 무시 */ }
+    }
+
+    db.prepare(`
+      UPDATE link_analyses SET analysis = ?, tags = ?, status = 'done', updated_at = datetime('now') WHERE id = ?
+    `).run(analysis, tags, id);
+
+    console.log(`[analyze] ${id}: 완료 (${analysis.length}자)`);
+  } catch (err) {
+    console.error(`[analyze] ${id}: 실패 —`, err);
+    db.prepare("UPDATE link_analyses SET status = 'failed', updated_at = datetime('now') WHERE id = ?").run(id);
+  }
+}
+
+// POST — 링크 분석 실행 (비동기 — 즉시 응답)
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json();
@@ -68,75 +145,21 @@ export async function POST(request: NextRequest) {
     let apiKey: string;
     try { apiKey = decrypt(encryptedKey); } catch { return NextResponse.json({ error: 'API 키 복호화 실패' }, { status: 500 }); }
 
-    // 메타데이터 추출
-    const metadata = await getVideoMetadata(videoId);
-    const title = metadata?.title || '제목 없음';
-    const channel = metadata?.channel || '채널 없음';
-    const thumbnail = metadata?.thumbnail || '';
-
-    // 자막 추출
-    const transcript = await getTranscript(videoId);
-    if (transcript.type === 'none' || !transcript.text) {
-      return NextResponse.json({ error: '이 영상에서 자막을 추출할 수 없습니다.' }, { status: 422 });
-    }
-
-    // DB에 pending 상태로 저장
+    // DB에 pending 상태로 즉시 저장
     const db = getDb();
     const id = crypto.randomUUID();
     db.prepare(`
-      INSERT INTO link_analyses (id, url, video_id, title, channel, thumbnail, transcript, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'analyzing', datetime('now'), datetime('now'))
-    `).run(id, url.trim(), videoId, title, channel, thumbnail, transcript.text);
+      INSERT INTO link_analyses (id, url, video_id, title, channel, thumbnail, status, created_at, updated_at)
+      VALUES (?, ?, ?, '추출 중...', '', '', 'pending', datetime('now'), datetime('now'))
+    `).run(id, trimmedUrl, videoId);
 
-    // Claude API 분석 (동기 — MVP에서는 기다림)
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 4096,
-          messages: [{ role: 'user', content: ANALYSIS_PROMPT(title, channel, transcript.text) }],
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || `Claude API ${res.status}`);
-      }
-
-      const data = await res.json();
-      const analysis = data.content?.[0]?.text || '';
-
-      // 태그 추출 (분석 결과에서 JSON 배열 파싱)
-      let tags: string | null = null;
-      const tagMatch = analysis.match(/\[[\s\S]*?\]/);
-      if (tagMatch) {
-        try {
-          const parsed = JSON.parse(tagMatch[0]);
-          if (Array.isArray(parsed)) tags = JSON.stringify(parsed);
-        } catch { /* 태그 파싱 실패 무시 */ }
-      }
-
-      db.prepare(`
-        UPDATE link_analyses SET analysis = ?, tags = ?, status = 'done', updated_at = datetime('now') WHERE id = ?
-      `).run(analysis, tags, id);
-
-      return NextResponse.json({
-        id, title, channel, thumbnail, status: 'done',
-        tags: tags ? JSON.parse(tags) : [],
-      });
-    } catch (err) {
+    // 백그라운드에서 분석 시작 (즉시 응답)
+    analyzeInBackground(id, videoId, trimmedUrl, apiKey).catch(err => {
+      console.error('[analyze] 백그라운드 실패:', err);
       db.prepare("UPDATE link_analyses SET status = 'failed', updated_at = datetime('now') WHERE id = ?").run(id);
-      return NextResponse.json({
-        error: `분석 실패: ${err instanceof Error ? err.message : 'unknown'}`,
-        id, title, status: 'failed',
-      }, { status: 500 });
-    }
+    });
+
+    return NextResponse.json({ id, status: 'pending', videoId });
   } catch (err) {
     return NextResponse.json({ error: `요청 처리 실패: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });
   }
@@ -152,7 +175,6 @@ export async function GET(request: NextRequest) {
 
     const db = getDb();
 
-    // 단일 분석 조회 (transcript 제외)
     if (id) {
       const row = db.prepare(`
         SELECT id, url, video_id, title, channel, thumbnail, analysis, tags, status, created_at, updated_at
@@ -162,7 +184,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ analysis: row });
     }
 
-    // 목록 조회 (analysis 본문 제외 — 목록에선 불필요)
     const analyses = db.prepare(`
       SELECT id, url, video_id, title, channel, thumbnail, tags, status, created_at, updated_at
       FROM link_analyses

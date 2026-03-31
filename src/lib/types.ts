@@ -151,7 +151,7 @@ export interface LinkAnalysis {
   transcript: string | null;
   analysis: string | null;
   tags: string | null;
-  status: 'pending' | 'analyzing' | 'done' | 'failed';
+  status: 'pending' | 'extracting' | 'analyzing' | 'done' | 'failed';
   created_at: string;
   updated_at: string;
 }

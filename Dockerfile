@@ -31,11 +31,14 @@ RUN npm run build
 # ============================================
 FROM node:20-slim AS runner
 
-# node-pty 런타임 의존성 (PTY spawn에 필요)
+# node-pty 런타임 의존성 + yt-dlp (YouTube 자막 추출 fallback)
 RUN apt-get update && apt-get install -y \
     python3 \
+    python3-pip \
     make \
     g++ \
+    ffmpeg \
+    && pip3 install --break-system-packages yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

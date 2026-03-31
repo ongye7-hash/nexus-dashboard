@@ -30,6 +30,23 @@ export default function LinkAnalyzerPanel() {
 
   useEffect(() => { fetchAnalyses(); }, [fetchAnalyses]);
 
+  // 진행 중인 분석이 있으면 3초마다 폴링
+  useEffect(() => {
+    const hasPending = analyses.some(a => a.status === 'pending' || a.status === 'analyzing' || a.status === 'extracting');
+    if (!hasPending) return;
+    const interval = setInterval(fetchAnalyses, 3000);
+    return () => clearInterval(interval);
+  }, [analyses, fetchAnalyses]);
+
+  // 선택된 분석이 완료되면 자동 로드
+  useEffect(() => {
+    if (!selectedId) return;
+    const selected = analyses.find(a => a.id === selectedId);
+    if (selected?.status === 'done' && !selectedAnalysis?.analysis) {
+      handleSelect(selectedId);
+    }
+  }, [analyses, selectedId, selectedAnalysis]);
+
   const handleAnalyze = async () => {
     if (!url.trim() || loading) return;
     setError(null);
@@ -47,16 +64,10 @@ export default function LinkAnalyzerPanel() {
         return;
       }
       setUrl('');
-      await fetchAnalyses();
       setSelectedId(data.id);
-      // 상세 로드
-      const detailRes = await fetch(`/api/analyze-link?id=${data.id}`);
-      if (detailRes.ok) {
-        const detail = await detailRes.json();
-        setSelectedAnalysis(detail.analysis);
-      } else {
-        setError('분석 완료됐으나 상세 내용을 불러오지 못했습니다. 목록에서 다시 선택해주세요.');
-      }
+      setSelectedAnalysis(null);
+      await fetchAnalyses();
+      // 폴링이 자동으로 상태 업데이트 처리
     } catch (err) {
       setError(err instanceof Error ? err.message : '네트워크 오류');
     } finally {
@@ -183,8 +194,11 @@ export default function LinkAnalyzerPanel() {
                     {a.status === 'failed' && (
                       <span className="text-xs text-red-500">실패</span>
                     )}
+                    {a.status === 'extracting' && (
+                      <span className="text-xs text-yellow-400">자막 추출중</span>
+                    )}
                     {a.status === 'analyzing' && (
-                      <span className="text-xs text-blue-400">분석중</span>
+                      <span className="text-xs text-blue-400">AI 분석중</span>
                     )}
                   </div>
                   {a.tags && (() => {
