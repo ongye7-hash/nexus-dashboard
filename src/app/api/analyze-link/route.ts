@@ -81,7 +81,7 @@ async function analyzeInBackground(id: string, videoId: string, url: string, api
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: 'user', content: ANALYSIS_PROMPT(title, channel, analysisContent, hasTranscript) }],
       }),
     });
