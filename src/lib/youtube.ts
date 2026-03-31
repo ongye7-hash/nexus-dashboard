@@ -28,7 +28,7 @@ export async function getVideoMetadata(videoId: string): Promise<{
   thumbnail: string;
 } | null> {
   try {
-    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();

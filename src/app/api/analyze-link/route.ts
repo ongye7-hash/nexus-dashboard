@@ -52,7 +52,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL이 필요합니다.' }, { status: 400 });
     }
 
-    const videoId = extractVideoId(url.trim());
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      return NextResponse.json({ error: '유효한 URL 형식이 아닙니다.' }, { status: 400 });
+    }
+    const videoId = extractVideoId(trimmedUrl);
     if (!videoId) {
       return NextResponse.json({ error: '유효한 YouTube URL이 아닙니다.' }, { status: 400 });
     }
@@ -148,9 +152,12 @@ export async function GET(request: NextRequest) {
 
     const db = getDb();
 
-    // 단일 분석 조회
+    // 단일 분석 조회 (transcript 제외)
     if (id) {
-      const row = db.prepare('SELECT * FROM link_analyses WHERE id = ?').get(id);
+      const row = db.prepare(`
+        SELECT id, url, video_id, title, channel, thumbnail, analysis, tags, status, created_at, updated_at
+        FROM link_analyses WHERE id = ?
+      `).get(id);
       if (!row) return NextResponse.json({ error: '분석을 찾을 수 없습니다.' }, { status: 404 });
       return NextResponse.json({ analysis: row });
     }
@@ -175,10 +182,13 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
-    if (!id) return NextResponse.json({ error: 'id가 필요합니다.' }, { status: 400 });
+    if (!id || typeof id !== 'string') return NextResponse.json({ error: 'id가 필요합니다.' }, { status: 400 });
 
     const db = getDb();
-    db.prepare('DELETE FROM link_analyses WHERE id = ?').run(id);
+    const result = db.prepare('DELETE FROM link_analyses WHERE id = ?').run(id);
+    if (result.changes === 0) {
+      return NextResponse.json({ error: '해당 분석을 찾을 수 없습니다.' }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: `삭제 실패: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });

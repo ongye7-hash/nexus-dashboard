@@ -54,6 +54,8 @@ export default function LinkAnalyzerPanel() {
       if (detailRes.ok) {
         const detail = await detailRes.json();
         setSelectedAnalysis(detail.analysis);
+      } else {
+        setError('분석 완료됐으나 상세 내용을 불러오지 못했습니다. 목록에서 다시 선택해주세요.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '네트워크 오류');
@@ -185,15 +187,23 @@ export default function LinkAnalyzerPanel() {
                       <span className="text-xs text-blue-400">분석중</span>
                     )}
                   </div>
-                  {a.tags && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {JSON.parse(a.tags).slice(0, 3).map((tag: string, i: number) => (
-                        <span key={i} className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {a.tags && (() => {
+                    try {
+                      const parsed = JSON.parse(a.tags);
+                      if (!Array.isArray(parsed)) return null;
+                      return (
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {parsed.slice(0, 3).map((tag: unknown, i: number) => (
+                            typeof tag === 'string' ? (
+                              <span key={i} className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">
+                                {tag}
+                              </span>
+                            ) : null
+                          ))}
+                        </div>
+                      );
+                    } catch { return null; }
+                  })()}
                 </div>
                 <button
                   onClick={e => handleDelete(a.id, e)}
