@@ -139,28 +139,43 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
     }
     console.log(`[youtube] 메타데이터 성공: "${metadata.title}"`);
 
-    // 자막 추출
+    // 자막 추출 — caption_tracks에서 base_url 직접 fetch (프록시 경유 보장)
     let transcript: TranscriptResult = { ...defaultTranscript };
-    try {
-      const transcriptData = await info.getTranscript();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = transcriptData as any;
-      if (data?.transcript?.content?.body?.initial_segments) {
-        const segments = data.transcript.content.body.initial_segments;
-        const text = segments
-          .map((s: unknown) => {
-            const seg = s as { snippet?: { text?: string } };
-            return seg.snippet?.text || '';
-          })
-          .filter(Boolean)
-          .join(' ');
-        if (text.length > 50) {
-          transcript = { text, language: 'auto', method: 'youtubei' };
-          console.log(`[youtube] 자막 성공: ${text.length}자`);
+    const captionTracks = info.captions?.caption_tracks;
+
+    if (captionTracks && captionTracks.length > 0) {
+      const track = captionTracks.find(t => t.language_code === 'ko')
+        || captionTracks.find(t => t.language_code === 'en')
+        || captionTracks[0];
+
+      console.log(`[youtube] caption_tracks ${captionTracks.length}개 발견, 선택: ${track.language_code} (${track.kind || 'manual'})`);
+
+      try {
+        const subUrl = track.base_url + (track.base_url.includes('?') ? '&' : '?') + 'fmt=json3';
+        const fetchFn = proxiedFetch || globalThis.fetch;
+        const subRes = await fetchFn(subUrl);
+
+        if (subRes.ok) {
+          const json3 = await subRes.json();
+          if (json3.events) {
+            const text = (json3.events as Array<{ segs?: Array<{ utf8?: string }> }>)
+              .flatMap(e => e.segs?.map(s => s.utf8 || '') || [])
+              .join('')
+              .replace(/\n/g, ' ')
+              .trim();
+            if (text.length > 50) {
+              transcript = { text, language: track.language_code, method: 'youtubei' };
+              console.log(`[youtube] 자막 성공 (${track.language_code}): ${text.length}자`);
+            }
+          }
+        } else {
+          console.warn(`[youtube] 자막 다운로드 HTTP ${subRes.status}`);
         }
+      } catch (err) {
+        console.warn('[youtube] 자막 다운로드 실패:', (err as Error).message);
       }
-    } catch (err) {
-      console.warn('[youtube] 자막 추출 실패:', (err as Error).message);
+    } else {
+      console.log('[youtube] caption_tracks 없음 (자막 미제공 영상)');
     }
 
     return { metadata, transcript };
