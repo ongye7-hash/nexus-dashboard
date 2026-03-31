@@ -154,7 +154,10 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
         }))
       ));
 
-      const track = captionTracks.find(t => t.language_code === 'ko')
+      // asr(자동생성)이 전체 내용, manual은 요약본일 수 있음 → asr 우선
+      const track = captionTracks.find(t => t.language_code === 'ko' && t.kind === 'asr')
+        || captionTracks.find(t => t.language_code === 'ko')
+        || captionTracks.find(t => t.language_code === 'en' && t.kind === 'asr')
         || captionTracks.find(t => t.language_code === 'en')
         || captionTracks[0];
 
