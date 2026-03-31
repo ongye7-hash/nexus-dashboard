@@ -719,7 +719,39 @@ function isFoundationFile(file: { path: string; type: string }): boolean {
 }
 
 function stripCodeFence(text: string): string {
-  return text.replace(/^```[\w]*\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  let code = text.replace(/^```[\w]*\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  // Claude가 코드 뒤에 설명/마크다운을 붙이는 경우 제거
+  // 코드 종료 후 한국어 설명, 마크다운 테이블, --- 구분선 등 감지
+  const lines = code.split('\n');
+  let cutIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    // 코드 라인이면 여기까지가 코드 끝
+    if (line.startsWith('import ') || line.startsWith('export ') || line.startsWith('const ') ||
+        line.startsWith('function ') || line.startsWith('return ') || line === '}' || line === '};' ||
+        line.startsWith('//') || line.startsWith('<') || line.startsWith('type ') || line.startsWith('interface ') ||
+        line.startsWith("'use client'") || line.startsWith('"use client"')) {
+      cutIndex = i;
+      break;
+    }
+    // 빈 줄은 건너뜀
+    if (line === '') continue;
+    // 마크다운/설명 패턴 감지
+    if (line.startsWith('---') || line.startsWith('|') || line.startsWith('#') ||
+        /^[가-힣]/.test(line) || line.startsWith('```') || line.startsWith('> ')) {
+      // 여기서부터 비코드 — 위로 계속 탐색
+      continue;
+    }
+    cutIndex = i;
+    break;
+  }
+  if (cutIndex !== -1 && cutIndex < lines.length - 1) {
+    const cleaned = lines.slice(0, cutIndex + 1).join('\n').trim();
+    if (cleaned.length > 0) {
+      code = cleaned;
+    }
+  }
+  return code;
 }
 
 interface FileEntry { path: string; type: string; description: string; order: number; dependencies: string[] }
@@ -1174,21 +1206,40 @@ ${recentStr || '(아직 없음)'}`;
         }
       }
 
-      // 3) 참조 무결성 검사 + 누락 파일 2차 생성
+      // 3) 참조 무결성 검사 + 누락 파일 2차 생성 (@/ + 상대 경로)
       const generatedPaths = new Set([...allGeneratedCode.keys()].map(p => p.toLowerCase()));
       const missingLocalFiles: Array<{ importPath: string; referencedBy: string; importAlias: string }> = [];
       for (const [filePath, code] of allGeneratedCode.entries()) {
-        const localImportRegex = /(?:from\s+['"]|require\s*\(\s*['"])(@\/[^'"]+)['"]/g;
+        // @/ 경로 import 검사
+        const aliasImportRegex = /(?:from\s+['"]|require\s*\(\s*['"])(@\/[^'"]+)['"]/g;
         let localMatch: RegExpExecArray | null;
-        while ((localMatch = localImportRegex.exec(code)) !== null) {
+        while ((localMatch = aliasImportRegex.exec(code)) !== null) {
           const importPath = localMatch[1].replace('@/', 'src/');
           const candidates = [importPath, `${importPath}.ts`, `${importPath}.tsx`, `${importPath}/index.ts`, `${importPath}/index.tsx`];
           const found = candidates.some(c => generatedPaths.has(c.toLowerCase()));
-          if (!found) {
-            // 중복 방지
-            if (!missingLocalFiles.some(m => m.importPath === importPath)) {
-              missingLocalFiles.push({ importPath, referencedBy: filePath, importAlias: localMatch[1] });
-            }
+          if (!found && !missingLocalFiles.some(m => m.importPath === importPath)) {
+            missingLocalFiles.push({ importPath, referencedBy: filePath, importAlias: localMatch[1] });
+          }
+        }
+
+        // 상대 경로 import 검사 (./ ../)
+        const relImportRegex = /(?:from\s+['"]|require\s*\(\s*['""])(\.\.?\/[^'"]+)['"]/g;
+        let relMatch: RegExpExecArray | null;
+        while ((relMatch = relImportRegex.exec(code)) !== null) {
+          const relPath = relMatch[1];
+          // 상대 경로를 절대 경로로 변환
+          const fileDir = filePath.substring(0, filePath.lastIndexOf('/'));
+          const parts = [...fileDir.split('/'), ...relPath.split('/')];
+          const resolved: string[] = [];
+          for (const part of parts) {
+            if (part === '..') resolved.pop();
+            else if (part !== '.') resolved.push(part);
+          }
+          const absPath = resolved.join('/');
+          const candidates = [absPath, `${absPath}.ts`, `${absPath}.tsx`, `${absPath}/index.ts`, `${absPath}/index.tsx`];
+          const found = candidates.some(c => generatedPaths.has(c.toLowerCase()));
+          if (!found && !missingLocalFiles.some(m => m.importPath === absPath)) {
+            missingLocalFiles.push({ importPath: absPath, referencedBy: filePath, importAlias: relMatch[1] });
           }
         }
       }
