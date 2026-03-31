@@ -293,6 +293,22 @@ function initializeTables() {
     )
   `);
 
+  // link_analyses 확장 컬럼 (안전하게 추가)
+  const laColumns = database.prepare("PRAGMA table_info(link_analyses)").all() as { name: string }[];
+  const laColNames = new Set(laColumns.map(c => c.name));
+  if (!laColNames.has('business_score')) {
+    database.exec("ALTER TABLE link_analyses ADD COLUMN business_score INTEGER");
+  }
+  if (!laColNames.has('score_breakdown')) {
+    database.exec("ALTER TABLE link_analyses ADD COLUMN score_breakdown TEXT");
+  }
+  if (!laColNames.has('verdict')) {
+    database.exec("ALTER TABLE link_analyses ADD COLUMN verdict TEXT");
+  }
+  if (!laColNames.has('search_data')) {
+    database.exec("ALTER TABLE link_analyses ADD COLUMN search_data TEXT");
+  }
+
   // project_blueprints 확장 컬럼 (안전하게 추가)
   const bpColumns = database.prepare("PRAGMA table_info(project_blueprints)").all() as { name: string }[];
   const bpColNames = new Set(bpColumns.map(c => c.name));

@@ -32,7 +32,7 @@ export default function LinkAnalyzerPanel() {
 
   // 진행 중인 분석이 있으면 3초마다 폴링
   useEffect(() => {
-    const hasPending = analyses.some(a => a.status === 'pending' || a.status === 'analyzing' || a.status === 'extracting');
+    const hasPending = analyses.some(a => a.status !== 'done' && a.status !== 'failed');
     if (!hasPending) return;
     const interval = setInterval(fetchAnalyses, 3000);
     return () => clearInterval(interval);
@@ -155,7 +155,7 @@ export default function LinkAnalyzerPanel() {
           {loading && (
             <div className="flex items-center gap-2 mt-2 text-blue-400 text-xs">
               <Loader2 size={14} className="animate-spin" />
-              <span>자막 추출 + AI 분석 중... (30초~1분)</span>
+              <span>자막 추출 + 4단계 AI 분석 중... (1~2분)</span>
             </div>
           )}
         </div>
@@ -187,7 +187,21 @@ export default function LinkAnalyzerPanel() {
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-zinc-200 font-medium truncate">{a.title || '제목 없음'}</p>
-                  <p className="text-xs text-zinc-500 truncate">{a.channel}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-zinc-500 truncate">{a.channel}</p>
+                    {a.business_score != null && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        a.business_score >= 80 ? 'bg-green-500/20 text-green-400' :
+                        a.business_score >= 50 ? 'bg-yellow-500/20 text-yellow-400' :
+                        'bg-red-500/20 text-red-400'
+                      }`}>
+                        {a.business_score}점
+                      </span>
+                    )}
+                    {a.verdict && (
+                      <span className="text-[10px] text-zinc-400">{a.verdict}</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <Clock size={10} className="text-zinc-600" />
                     <span className="text-xs text-zinc-600">
@@ -199,8 +213,23 @@ export default function LinkAnalyzerPanel() {
                     {a.status === 'failed' && (
                       <span className="text-xs text-red-500">실패</span>
                     )}
+                    {a.status === 'pending' && (
+                      <span className="text-xs text-zinc-400">대기중</span>
+                    )}
                     {a.status === 'extracting' && (
                       <span className="text-xs text-yellow-400">자막 추출중</span>
+                    )}
+                    {a.status === 'step1_keywords' && (
+                      <span className="text-xs text-blue-400">키워드 추출중</span>
+                    )}
+                    {a.status === 'step2_research' && (
+                      <span className="text-xs text-blue-400">시장 조사중</span>
+                    )}
+                    {a.status === 'step3_analysis' && (
+                      <span className="text-xs text-purple-400">심층 분석중</span>
+                    )}
+                    {a.status === 'step4_scoring' && (
+                      <span className="text-xs text-orange-400">점수 산출중</span>
                     )}
                     {a.status === 'analyzing' && (
                       <span className="text-xs text-blue-400">AI 분석중</span>
@@ -273,6 +302,63 @@ export default function LinkAnalyzerPanel() {
                 </a>
               </div>
             </div>
+
+            {/* 사업성 점수 카드 */}
+            {selectedAnalysis.business_score != null && (
+              <div className="mb-6 p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
+                <div className="flex items-center gap-4">
+                  <div className={`text-3xl font-bold ${
+                    selectedAnalysis.business_score >= 80 ? 'text-green-400' :
+                    selectedAnalysis.business_score >= 50 ? 'text-yellow-400' :
+                    'text-red-400'
+                  }`}>
+                    {selectedAnalysis.business_score}<span className="text-lg text-zinc-500">/100</span>
+                  </div>
+                  {selectedAnalysis.verdict && (
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      selectedAnalysis.verdict === '강력 추천' ? 'bg-green-500/20 text-green-400' :
+                      selectedAnalysis.verdict === '추천' ? 'bg-blue-500/20 text-blue-400' :
+                      selectedAnalysis.verdict === '검토 필요' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {selectedAnalysis.verdict}
+                    </span>
+                  )}
+                </div>
+                {selectedAnalysis.score_breakdown && (() => {
+                  try {
+                    const bd = JSON.parse(selectedAnalysis.score_breakdown);
+                    const items = [
+                      { label: '시장 규모', value: bd.market_size, max: 20 },
+                      { label: '경쟁 강도', value: bd.competition, max: 20 },
+                      { label: '실행 가능성', value: bd.execution_feasibility, max: 20 },
+                      { label: '수익 잠재력', value: bd.revenue_potential, max: 20 },
+                      { label: '리스크', value: bd.risk_level, max: 20 },
+                    ];
+                    return (
+                      <div className="grid grid-cols-5 gap-2 mt-3">
+                        {items.map(item => (
+                          <div key={item.label} className="text-center">
+                            <div className="text-xs text-zinc-500 mb-1">{item.label}</div>
+                            <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  item.value >= 15 ? 'bg-green-500' :
+                                  item.value >= 10 ? 'bg-yellow-500' :
+                                  'bg-red-500'
+                                }`}
+                                style={{ width: `${(item.value / item.max) * 100}%` }}
+                              />
+                            </div>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.value}/{item.max}</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  } catch { return null; }
+                })()}
+              </div>
+            )}
 
             {/* 분석 결과 마크다운 */}
             {selectedAnalysis.analysis ? (

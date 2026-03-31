@@ -151,7 +151,11 @@ export interface LinkAnalysis {
   transcript: string | null;
   analysis: string | null;
   tags: string | null;
-  status: 'pending' | 'extracting' | 'analyzing' | 'done' | 'failed';
+  business_score: number | null;
+  score_breakdown: string | null;
+  verdict: string | null;
+  search_data: string | null;
+  status: 'pending' | 'extracting' | 'step1_keywords' | 'step2_research' | 'step3_analysis' | 'step4_scoring' | 'analyzing' | 'done' | 'failed';
   created_at: string;
   updated_at: string;
 }

@@ -12,6 +12,7 @@ import {
   Zap,
   TrendingUp,
   Globe,
+  Search,
 } from 'lucide-react';
 
 export default function AITab() {
@@ -41,6 +42,15 @@ export default function AITab() {
   const [trendsSaveSuccess, setTrendsSaveSuccess] = useState(false);
   const [trendsConfirmDelete, setTrendsConfirmDelete] = useState(false);
 
+  // perplexity
+  const [perplexityKey, setPerplexityKey] = useState('');
+  const [showPerplexityKey, setShowPerplexityKey] = useState(false);
+  const [perplexitySaving, setPerplexitySaving] = useState(false);
+  const [perplexityStatus, setPerplexityStatus] = useState<{ online: boolean } | null>(null);
+  const [perplexityError, setPerplexityError] = useState<string | null>(null);
+  const [perplexitySaveSuccess, setPerplexitySaveSuccess] = useState(false);
+  const [perplexityConfirmDelete, setPerplexityConfirmDelete] = useState(false);
+
   // proxy
   const [proxyUrl, setProxyUrl] = useState('');
   const [showProxy, setShowProxy] = useState(false);
@@ -54,6 +64,7 @@ export default function AITab() {
     checkStatus();
     checkN8nStatus();
     checkTrendsStatus();
+    checkPerplexityStatus();
     checkProxyStatus();
   }, []);
 
@@ -74,6 +85,12 @@ export default function AITab() {
     const timer = setTimeout(() => setTrendsSaveSuccess(false), 2000);
     return () => clearTimeout(timer);
   }, [trendsSaveSuccess]);
+
+  useEffect(() => {
+    if (!perplexitySaveSuccess) return;
+    const timer = setTimeout(() => setPerplexitySaveSuccess(false), 2000);
+    return () => clearTimeout(timer);
+  }, [perplexitySaveSuccess]);
 
   useEffect(() => {
     if (!proxySaveSuccess) return;
@@ -234,6 +251,48 @@ export default function AITab() {
     } catch (error) {
       console.warn('Trends API 키 삭제 실패:', error);
       setTrendsError('Trends API 키 삭제에 실패했습니다');
+    }
+  };
+
+  const checkPerplexityStatus = async () => {
+    try {
+      const res = await fetch('/api/ai?action=perplexityStatus');
+      const data = await res.json();
+      setPerplexityStatus(data);
+    } catch { setPerplexityStatus(null); }
+  };
+
+  const handleSavePerplexityKey = async () => {
+    if (!perplexityKey.trim()) return;
+    setPerplexitySaving(true);
+    setPerplexityError(null);
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'savePerplexityKey', perplexityApiKey: perplexityKey.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) { setPerplexityKey(''); setPerplexitySaveSuccess(true); await checkPerplexityStatus(); }
+      else setPerplexityError(data.error || '저장 실패');
+    } catch (error) {
+      console.warn('Perplexity API 키 저장 실패:', error);
+      setPerplexityError('Perplexity API 키 저장에 실패했습니다');
+    } finally { setPerplexitySaving(false); }
+  };
+
+  const handleDeletePerplexityKey = async () => {
+    if (!perplexityConfirmDelete) { setPerplexityConfirmDelete(true); return; }
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deletePerplexityKey' }),
+      });
+      if (res.ok) { setPerplexityConfirmDelete(false); await checkPerplexityStatus(); }
+    } catch (error) {
+      console.warn('Perplexity API 키 삭제 실패:', error);
+      setPerplexityError('Perplexity API 키 삭제에 실패했습니다');
     }
   };
 
@@ -541,6 +600,87 @@ export default function AITab() {
         {trendsError && (
           <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
             <p className="text-sm text-red-400">{trendsError}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Perplexity API 섹션 */}
+      <div className="mt-6 pt-6 border-t border-[#27272a]">
+        <div className="flex items-center gap-2 mb-4">
+          <Search className="w-4 h-4 text-blue-400" />
+          <span className="text-sm font-medium text-white">Perplexity 시장 조사</span>
+          <span className="text-xs text-zinc-600">(선택)</span>
+        </div>
+
+        {perplexityStatus?.online ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-[#0f0f10] rounded-lg">
+              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <Search className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-white">Perplexity Sonar</p>
+                <p className="text-xs text-zinc-500">링크 분석 시 실시간 시장 조사</p>
+              </div>
+              <div className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded-full">
+                <Check className="w-3 h-3 text-green-400" />
+                <span className="text-xs text-green-400">설정됨</span>
+              </div>
+            </div>
+            <button
+              onClick={handleDeletePerplexityKey}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                perplexityConfirmDelete
+                  ? 'bg-red-600 hover:bg-red-500 text-white'
+                  : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10'
+              }`}
+            >
+              <Unlink className="w-4 h-4" />
+              {perplexityConfirmDelete ? '정말 삭제하시겠습니까?' : 'API 키 삭제'}
+            </button>
+            {perplexityConfirmDelete && (
+              <button onClick={() => setPerplexityConfirmDelete(false)} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                취소
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="p-3 bg-[#0f0f10] rounded-lg">
+              <p className="text-sm text-zinc-300 mb-1">Perplexity API Key</p>
+              <p className="text-xs text-zinc-500">없으면 시장 조사 단계를 건너뛰고 AI 추정으로 대체</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Key className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              <input
+                type={showPerplexityKey ? 'text' : 'password'}
+                value={perplexityKey}
+                onChange={(e) => { setPerplexityKey(e.target.value); setPerplexityError(null); }}
+                placeholder="pplx-..."
+                className="flex-1 px-3 py-2 bg-[#0f0f10] border border-[#27272a] rounded-lg text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus:border-blue-500 font-mono"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSavePerplexityKey(); }}
+              />
+              <button
+                onClick={() => setShowPerplexityKey(!showPerplexityKey)}
+                className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                {showPerplexityKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <button
+              onClick={handleSavePerplexityKey}
+              disabled={!perplexityKey.trim() || perplexitySaving}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm text-white font-medium transition-colors"
+            >
+              {perplexitySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : perplexitySaveSuccess ? <Check className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+              {perplexitySaving ? '저장 중...' : perplexitySaveSuccess ? '저장 완료!' : '저장'}
+            </button>
+          </div>
+        )}
+
+        {perplexityError && (
+          <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <p className="text-sm text-red-400">{perplexityError}</p>
           </div>
         )}
       </div>

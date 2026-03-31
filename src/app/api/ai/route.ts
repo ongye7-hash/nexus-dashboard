@@ -256,6 +256,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ online: !!proxyUrl });
     }
 
+    case 'perplexityStatus': {
+      const pKey = getSetting('perplexity_api_key');
+      return NextResponse.json({ online: !!pKey });
+    }
+
     default:
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
   }
@@ -326,6 +331,19 @@ export async function POST(request: Request) {
 
     if (action === 'deleteTrendsKey') {
       deleteSetting('trends_api_key');
+      return NextResponse.json({ success: true });
+    }
+
+    // Perplexity API Key 저장
+    if (action === 'savePerplexityKey') {
+      const { perplexityApiKey } = body;
+      if (!perplexityApiKey) return NextResponse.json({ error: 'Perplexity API 키가 필요합니다' }, { status: 400 });
+      setSetting('perplexity_api_key', encrypt(perplexityApiKey.trim()));
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === 'deletePerplexityKey') {
+      deleteSetting('perplexity_api_key');
       return NextResponse.json({ success: true });
     }
 
