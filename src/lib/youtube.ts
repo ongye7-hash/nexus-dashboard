@@ -140,20 +140,9 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
 
     // 자막 추출 — caption_tracks에서 base_url 직접 fetch (프록시 경유 보장)
     let transcript: TranscriptResult = { ...defaultTranscript };
-    console.log(`[youtube] captions 존재: ${!!info.captions}, caption_tracks: ${info.captions?.caption_tracks?.length ?? 'undefined'}`);
     const captionTracks = info.captions?.caption_tracks;
 
     if (captionTracks && captionTracks.length > 0) {
-      // 디버그: 전체 트랙 정보
-      console.log('[youtube] caption_tracks 전체:', JSON.stringify(
-        captionTracks.map(t => ({
-          lang: t.language_code,
-          kind: t.kind,
-          name: t.name?.text || t.name,
-          baseUrl: t.base_url?.substring(0, 100) + '...',
-        }))
-      ));
-
       // asr(자동생성)이 전체 내용, manual은 요약본일 수 있음 → asr 우선
       const track = captionTracks.find(t => t.language_code === 'ko' && t.kind === 'asr')
         || captionTracks.find(t => t.language_code === 'ko')
@@ -170,12 +159,6 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
 
         if (subRes.ok) {
           const json3 = await subRes.json();
-
-          // 디버그: json3 응답 구조
-          console.log('[youtube] json3 keys:', Object.keys(json3));
-          console.log('[youtube] json3 events 수:', json3.events?.length);
-          console.log('[youtube] json3 첫 3개 event:', JSON.stringify(json3.events?.slice(0, 3)));
-          console.log('[youtube] json3 전체 바이트:', JSON.stringify(json3).length);
 
           if (json3.events) {
             const text = (json3.events as Array<{ segs?: Array<{ utf8?: string }> }>)
