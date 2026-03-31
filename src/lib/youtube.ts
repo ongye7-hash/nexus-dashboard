@@ -114,7 +114,6 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
 
     const opts: Parameters<typeof Innertube.create>[0] = {
       generate_session_locally: true,
-      retrieve_player: false,
     };
     if (proxiedFetch) {
       opts.fetch = proxiedFetch;
@@ -141,6 +140,7 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
 
     // 자막 추출 — caption_tracks에서 base_url 직접 fetch (프록시 경유 보장)
     let transcript: TranscriptResult = { ...defaultTranscript };
+    console.log(`[youtube] captions 존재: ${!!info.captions}, caption_tracks: ${info.captions?.caption_tracks?.length ?? 'undefined'}`);
     const captionTracks = info.captions?.caption_tracks;
 
     if (captionTracks && captionTracks.length > 0) {
