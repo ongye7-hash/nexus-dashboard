@@ -782,78 +782,28 @@ function extractAllImports(allCode: Map<string, string>): string[] {
   return [...imports];
 }
 
-// 프레임워크별 빌드 필수 파일 — ideate에서 누락 시 generate에서 자동 보강
-const FRAMEWORK_REQUIRED_FILES: Record<string, FileEntry[]> = {
+// 프레임워크별 검증된 템플릿 — 빌드 보장되는 고정 파일
+const FRAMEWORK_TEMPLATES: Record<string, Array<{ path: string; content: string }>> = {
   'next.js': [
-    { path: 'src/app/layout.tsx', type: 'page', description: '루트 레이아웃 (html, body, metadata, globals.css import)', order: 2, dependencies: ['src/app/globals.css'] },
-    { path: 'src/app/globals.css', type: 'config', description: 'Tailwind CSS @import (base, components, utilities)', order: 3, dependencies: [] },
-    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 — compilerOptions.paths에 "@/*": ["./src/*"] 필수 포함', order: 1, dependencies: [] },
-    { path: 'postcss.config.mjs', type: 'config', description: 'PostCSS + Tailwind 플러그인 설정', order: 1, dependencies: [] },
-    { path: 'tailwind.config.ts', type: 'config', description: 'Tailwind CSS 설정 (content 경로 포함)', order: 1, dependencies: [] },
-    { path: 'next.config.ts', type: 'config', description: 'Next.js 프레임워크 설정', order: 1, dependencies: [] },
-    { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법, 기술 스택', order: 50, dependencies: [] },
-  ],
-  'express': [
-    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 — paths alias 포함', order: 1, dependencies: [] },
-    { path: 'src/index.ts', type: 'config', description: '서버 엔트리포인트 (Express app 시작)', order: 3, dependencies: [] },
-    { path: '.env.example', type: 'config', description: '환경변수 예제 파일', order: 2, dependencies: [] },
-    { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법', order: 50, dependencies: [] },
-  ],
-  'react': [
-    { path: 'index.html', type: 'config', description: 'HTML 엔트리포인트', order: 1, dependencies: [] },
-    { path: 'src/main.tsx', type: 'config', description: 'React 엔트리포인트 (createRoot)', order: 2, dependencies: [] },
-    { path: 'src/App.tsx', type: 'page', description: '루트 App 컴포넌트', order: 3, dependencies: [] },
-    { path: 'vite.config.ts', type: 'config', description: 'Vite 빌드 설정', order: 1, dependencies: [] },
-    { path: 'tsconfig.json', type: 'config', description: 'TypeScript 설정 — paths alias 포함', order: 1, dependencies: [] },
-    { path: 'postcss.config.js', type: 'config', description: 'PostCSS + Tailwind 플러그인', order: 1, dependencies: [] },
-    { path: 'tailwind.config.js', type: 'config', description: 'Tailwind CSS 설정', order: 1, dependencies: [] },
-    { path: 'README.md', type: 'other', description: '프로젝트 소개, 설치/실행 방법', order: 50, dependencies: [] },
+    { path: 'package.json', content: JSON.stringify({
+      name: 'PROJECT_NAME', version: '0.1.0', private: true,
+      scripts: { dev: 'next dev', build: 'next build', start: 'next start', lint: 'next lint' },
+      dependencies: { next: '14.2.35', react: '^18.3.1', 'react-dom': '^18.3.1', '@supabase/supabase-js': '^2.49.0', '@supabase/ssr': '^0.5.0' },
+      devDependencies: { typescript: '^5.7.0', '@types/node': '^22.0.0', '@types/react': '^18.3.0', '@types/react-dom': '^18.3.0', tailwindcss: '^3.4.0', postcss: '^8.4.0', autoprefixer: '^10.4.0', eslint: '^8.57.0', 'eslint-config-next': '14.2.35' },
+    }, null, 2) },
+    { path: 'tsconfig.json', content: JSON.stringify({
+      compilerOptions: { lib: ['dom', 'dom.iterable', 'esnext'], allowJs: true, skipLibCheck: true, strict: true, noEmit: true, esModuleInterop: true, module: 'esnext', moduleResolution: 'bundler', resolveJsonModule: true, isolatedModules: true, jsx: 'preserve', incremental: true, plugins: [{ name: 'next' }], paths: { '@/*': ['./src/*'] } },
+      include: ['next-env.d.ts', '**/*.ts', '**/*.tsx', '.next/types/**/*.ts'], exclude: ['node_modules'],
+    }, null, 2) },
+    { path: 'next.config.mjs', content: `/** @type {import('next').NextConfig} */\nconst nextConfig = {};\nexport default nextConfig;\n` },
+    { path: 'tailwind.config.ts', content: `import type { Config } from 'tailwindcss'\n\nconst config: Config = {\n  content: [\n    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',\n    './src/components/**/*.{js,ts,jsx,tsx,mdx}',\n    './src/app/**/*.{js,ts,jsx,tsx,mdx}',\n  ],\n  theme: { extend: {} },\n  plugins: [],\n}\nexport default config\n` },
+    { path: 'postcss.config.mjs', content: `/** @type {import('postcss-load-config').Config} */\nconst config = {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\nexport default config;\n` },
+    { path: 'src/app/layout.tsx', content: `import type { Metadata } from 'next'\nimport './globals.css'\n\nexport const metadata: Metadata = {\n  title: 'PROJECT_NAME',\n  description: 'PROJECT_DESCRIPTION',\n}\n\nexport default function RootLayout({\n  children,\n}: {\n  children: React.ReactNode\n}) {\n  return (\n    <html lang="ko">\n      <body>{children}</body>\n    </html>\n  )\n}\n` },
+    { path: 'src/app/globals.css', content: `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n` },
+    { path: '.eslintrc.json', content: JSON.stringify({ extends: 'next/core-web-vitals' }, null, 2) },
+    { path: '.env.example', content: `# Supabase\nNEXT_PUBLIC_SUPABASE_URL=your_supabase_url\nNEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key\nSUPABASE_SERVICE_ROLE_KEY=your_service_role_key\n` },
   ],
 };
-
-// 프레임워크별 필수 devDependencies — import 스캔에 안 잡히는 빌드 도구
-const FRAMEWORK_REQUIRED_DEPS: Record<string, Record<string, string>> = {
-  'next.js': {
-    'tailwindcss': 'latest', 'postcss': 'latest', 'autoprefixer': 'latest',
-    '@types/node': 'latest', '@types/react': 'latest', '@types/react-dom': 'latest',
-    'eslint': 'latest', 'eslint-config-next': 'latest', 'typescript': 'latest',
-  },
-  'express': {
-    '@types/node': 'latest', '@types/express': 'latest', 'typescript': 'latest',
-    'tsx': 'latest', 'eslint': 'latest',
-  },
-  'react': {
-    'tailwindcss': 'latest', 'postcss': 'latest', 'autoprefixer': 'latest',
-    '@types/react': 'latest', '@types/react-dom': 'latest', 'typescript': 'latest',
-    '@vitejs/plugin-react': 'latest', 'eslint': 'latest',
-  },
-};
-
-function ensureRequiredFiles(files: FileEntry[], techStack: Record<string, unknown>): FileEntry[] {
-  const framework = String(techStack.framework || '').toLowerCase();
-  // 매칭: "Next.js" → "next.js", "Express.js" → "express", "React (Vite)" → "react"
-  const matchedKey = Object.keys(FRAMEWORK_REQUIRED_FILES).find(k => framework.includes(k));
-  if (!matchedKey) return files;
-
-  const required = FRAMEWORK_REQUIRED_FILES[matchedKey];
-  const existingPaths = new Set(files.map(f => f.path.toLowerCase()));
-  const missing: FileEntry[] = [];
-
-  for (const req of required) {
-    // 유연 매칭: postcss.config.mjs ↔ postcss.config.js, next.config.ts ↔ next.config.mjs 등
-    const baseName = req.path.replace(/\.(mjs|ts|js|json)$/, '');
-    const hasVariant = files.some(f => f.path.toLowerCase().replace(/\.(mjs|ts|js|json)$/, '') === baseName.toLowerCase());
-    if (!hasVariant && !existingPaths.has(req.path.toLowerCase())) {
-      missing.push(req);
-    }
-  }
-
-  if (missing.length > 0) {
-    console.log(`[generate] 필수 파일 ${missing.length}개 자동 보강: ${missing.map(f => f.path).join(', ')}`);
-  }
-
-  return [...files, ...missing];
-}
 
 // 12. project_generate — 비동기 코드 생성 + GitHub push
 
@@ -866,11 +816,30 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
 
   let files: FileEntry[] = JSON.parse(String(bp.file_structure));
 
-  // tech_stack 기반 필수 파일 자동 보강
+  // tech_stack에서 프레임워크 + 프로젝트명 추출
+  let techStackFramework = '';
+  let techStackObj: Record<string, unknown> = {};
   try {
-    const techStack = JSON.parse(String(bp.tech_stack || '{}'));
-    files = ensureRequiredFiles(files, techStack);
-  } catch { /* tech_stack 파싱 실패 시 그냥 진행 */ }
+    techStackObj = JSON.parse(String(bp.tech_stack || '{}'));
+    techStackFramework = String(techStackObj.framework || '').toLowerCase();
+  } catch { /* 무시 */ }
+
+  // 템플릿 매칭
+  const templateKey = Object.keys(FRAMEWORK_TEMPLATES).find(k => techStackFramework.includes(k));
+  const templates = templateKey ? FRAMEWORK_TEMPLATES[templateKey] : [];
+  const templatePaths = new Set(templates.map(t => t.path.toLowerCase()));
+
+  // file_structure에서 템플릿 파일 제외 (Claude가 생성하지 않음)
+  if (templates.length > 0) {
+    files = files.filter(f => {
+      const baseName = f.path.toLowerCase().replace(/\.(mjs|ts|js|json|css)$/, '');
+      return !templates.some(t => {
+        const tBase = t.path.toLowerCase().replace(/\.(mjs|ts|js|json|css)$/, '');
+        return tBase === baseName || templatePaths.has(f.path.toLowerCase());
+      });
+    });
+    console.log(`[generate] 템플릿 ${templates.length}개 파일 적용, Claude 생성 대상: ${files.length}개`);
+  }
 
   files.sort((a, b) => (a.order || 99) - (b.order || 99));
 
@@ -941,6 +910,35 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
   const generatedBlobs: Array<{ path: string; sha: string }> = [];
   const failedFiles: string[] = [];
 
+  // === 템플릿 파일을 blob으로 추가 (Claude 호출 없음) ===
+  if (templates.length > 0) {
+    const ideaDesc = String(bp.idea || repoName);
+    for (const tmpl of templates) {
+      // PROJECT_NAME, PROJECT_DESCRIPTION 치환
+      const content = tmpl.content
+        .replace(/PROJECT_NAME/g, repoName)
+        .replace(/PROJECT_DESCRIPTION/g, ideaDesc);
+
+      try {
+        const blobRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/blobs`, {
+          method: 'POST', headers: ghHeaders,
+          body: JSON.stringify({ content: Buffer.from(content).toString('base64'), encoding: 'base64' }),
+        });
+        if (blobRes.ok) {
+          const bd = await blobRes.json();
+          generatedBlobs.push({ path: tmpl.path, sha: bd.sha });
+          allGeneratedCode.set(tmpl.path, content);
+          if (isFoundationFile({ path: tmpl.path, type: 'config' })) {
+            foundationFiles.set(tmpl.path, content);
+          }
+          console.log(`[generate] 템플릿: ${tmpl.path} (${content.length}자)`);
+        }
+      } catch (err) {
+        console.warn(`[generate] 템플릿 blob 실패: ${tmpl.path}`, err);
+      }
+    }
+  }
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     console.log(`[generate] [${i + 1}/${files.length}] ${file.path} 시작...`);
@@ -957,9 +955,8 @@ async function generateCodeInBackground(blueprintId: string): Promise<void> {
 - soft delete(deletedAt) 패턴을 사용하려면 스키마에 해당 컬럼이 반드시 정의되어 있어야 한다.
 - 패키지 버전은 2026년 3월 기준 최신 안정 버전을 사용하라.
 - import 경로, 필드명, 타입명은 아래 기반 파일과 100% 일치해야 한다.
-- package.json 생성 시: 코드에서 import/require하는 모든 외부 패키지를 dependencies 또는 devDependencies에 반드시 포함하라.
-- tsconfig.json 생성 시: compilerOptions.paths에 "@/*": ["./src/*"] path alias를 반드시 설정하라.
 - 한 파일은 300줄 이내로 작성하라. 복잡한 UI는 하위 컴포넌트로 분리하고, 페이지는 레이아웃+데이터만 담당.
+- package.json, tsconfig.json, tailwind.config 등 설정 파일은 이미 제공됨. 이 파일들을 생성하지 마라.
 - React hooks(useState, useEffect 등), onClick 이벤트 핸들러, 브라우저 API를 사용하는 파일은 최상단에 반드시 'use client' 선언.
 - npm에 실제로 존재하는 패키지만 import하라. 존재 여부가 불확실하면 직접 구현하라.
 - file_structure에 정의된 파일만 import하라. 정의되지 않은 @/ 경로를 사용하지 마라.
@@ -1037,25 +1034,8 @@ ${recentStr || '(아직 없음)'}`;
       const devDeps = pkg.devDependencies || {};
       const allExisting = new Set([...Object.keys(deps), ...Object.keys(devDeps)]);
 
-      // 1) 프레임워크 필수 devDependencies 주입
-      let techStackFramework = '';
-      try {
-        const ts = JSON.parse(String(bp.tech_stack || '{}'));
-        techStackFramework = String(ts.framework || '').toLowerCase();
-      } catch { /* 무시 */ }
-      const matchedFwKey = Object.keys(FRAMEWORK_REQUIRED_DEPS).find(k => techStackFramework.includes(k));
-      if (matchedFwKey) {
-        const requiredDev = FRAMEWORK_REQUIRED_DEPS[matchedFwKey];
-        for (const [depName, depVer] of Object.entries(requiredDev)) {
-          if (!allExisting.has(depName)) {
-            if (!pkg.devDependencies) pkg.devDependencies = {};
-            pkg.devDependencies[depName] = depVer;
-            allExisting.add(depName);
-          }
-        }
-      }
-
-      // 2) 전체 생성 코드에서 import 스캔 → 누락 패키지 추가
+      // 1) 전체 생성 코드에서 import 스캔 → 누락 패키지 추가
+      // (프레임워크 기본 deps는 템플릿 package.json에 이미 포함)
       const scannedImports = extractAllImports(allGeneratedCode);
       const builtins = new Set(['fs', 'path', 'crypto', 'http', 'https', 'url', 'util', 'stream', 'os', 'child_process', 'events', 'buffer', 'querystring', 'net', 'tls', 'dns', 'assert', 'zlib']);
       const candidatePackages: string[] = [];
@@ -1094,7 +1074,15 @@ ${recentStr || '(아직 없음)'}`;
         ...Object.keys(pkg.dependencies || {}),
         ...Object.keys(pkg.devDependencies || {}),
       ].filter(name => !builtins.has(name) && !name.startsWith('node:'));
-      const knownValid = new Set(Object.keys(FRAMEWORK_REQUIRED_DEPS[matchedFwKey || ''] || {}));
+      // 템플릿 package.json에 포함된 패키지는 검증 스킵 (이미 검증됨)
+      const templatePkg = templates.find(t => t.path === 'package.json');
+      let knownValid = new Set<string>();
+      if (templatePkg) {
+        try {
+          const tPkg = JSON.parse(templatePkg.content);
+          knownValid = new Set([...Object.keys(tPkg.dependencies || {}), ...Object.keys(tPkg.devDependencies || {})]);
+        } catch { /* 무시 */ }
+      }
       const unknownDeps = allDepsToValidate.filter(name => !knownValid.has(name));
 
       if (unknownDeps.length > 0) {
