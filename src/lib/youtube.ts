@@ -144,6 +144,16 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
     const captionTracks = info.captions?.caption_tracks;
 
     if (captionTracks && captionTracks.length > 0) {
+      // 디버그: 전체 트랙 정보
+      console.log('[youtube] caption_tracks 전체:', JSON.stringify(
+        captionTracks.map(t => ({
+          lang: t.language_code,
+          kind: t.kind,
+          name: t.name?.text || t.name,
+          baseUrl: t.base_url?.substring(0, 100) + '...',
+        }))
+      ));
+
       const track = captionTracks.find(t => t.language_code === 'ko')
         || captionTracks.find(t => t.language_code === 'en')
         || captionTracks[0];
@@ -157,6 +167,13 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
 
         if (subRes.ok) {
           const json3 = await subRes.json();
+
+          // 디버그: json3 응답 구조
+          console.log('[youtube] json3 keys:', Object.keys(json3));
+          console.log('[youtube] json3 events 수:', json3.events?.length);
+          console.log('[youtube] json3 첫 3개 event:', JSON.stringify(json3.events?.slice(0, 3)));
+          console.log('[youtube] json3 전체 바이트:', JSON.stringify(json3).length);
+
           if (json3.events) {
             const text = (json3.events as Array<{ segs?: Array<{ utf8?: string }> }>)
               .flatMap(e => e.segs?.map(s => s.utf8 || '') || [])
