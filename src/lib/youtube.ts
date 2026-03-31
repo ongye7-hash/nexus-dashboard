@@ -52,9 +52,12 @@ const EMPTY_METADATA: VideoMetadata = {
 // ============================================================
 
 const PIPED_INSTANCES = [
+  'https://pipedapi.adminforge.de',
+  'https://pipedapi.leptons.xyz',
+  'https://api.piped.private.coffee',
+  'https://piped-api.privacy.com.de',
+  'https://pipedapi.reallyaweso.me',
   'https://pipedapi.kavin.rocks',
-  'https://api.piped.yt',
-  'https://piped-api.lunar.icu',
 ];
 
 /**
@@ -411,13 +414,20 @@ export async function getYouTubeData(videoId: string): Promise<YouTubeData> {
   const innertubeResult = await getFromInnertube(videoId);
 
   // 결과 병합: 메타데이터는 가장 먼저 성공한 것, 자막도 마찬가지
-  const metadata = pipedResult?.metadata.title
-    ? pipedResult.metadata
-    : innertubeResult?.metadata || { title: '제목 없음', channel: '채널 없음', thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, description: '', viewCount: '', publishDate: '' };
+  const defaultMeta: VideoMetadata = { title: '제목 없음', channel: '채널 없음', thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, description: '', viewCount: '', publishDate: '' };
+  const defaultTranscript: TranscriptResult = { text: '', language: '', method: 'none' };
 
-  let transcript = pipedResult?.transcript.method !== 'none'
-    ? pipedResult!.transcript
-    : innertubeResult?.transcript || { text: '', language: '', method: 'none' as const };
+  const metadata = (pipedResult && pipedResult.metadata.title)
+    ? pipedResult.metadata
+    : (innertubeResult && innertubeResult.metadata.title)
+      ? innertubeResult.metadata
+      : defaultMeta;
+
+  let transcript = (pipedResult && pipedResult.transcript.method !== 'none')
+    ? pipedResult.transcript
+    : (innertubeResult && innertubeResult.transcript.method !== 'none')
+      ? innertubeResult.transcript
+      : defaultTranscript;
 
   // === 3순위: yt-dlp (자막만 없을 때) ===
   if (transcript.method === 'none') {
