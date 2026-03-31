@@ -1057,18 +1057,77 @@ ${recentStr || '(아직 없음)'}`;
         }
       }
 
-      // 3) 참조 무결성 검사 — @/ import가 생성된 파일에 존재하는지 확인
+      // 3) 참조 무결성 검사 + 누락 파일 2차 생성
       const generatedPaths = new Set([...allGeneratedCode.keys()].map(p => p.toLowerCase()));
+      const missingLocalFiles: Array<{ importPath: string; referencedBy: string; importAlias: string }> = [];
       for (const [filePath, code] of allGeneratedCode.entries()) {
         const localImportRegex = /(?:from\s+['"]|require\s*\(\s*['"])(@\/[^'"]+)['"]/g;
         let localMatch: RegExpExecArray | null;
         while ((localMatch = localImportRegex.exec(code)) !== null) {
           const importPath = localMatch[1].replace('@/', 'src/');
-          // 확장자 없는 import도 체크 (.ts, .tsx, /index.ts 등)
           const candidates = [importPath, `${importPath}.ts`, `${importPath}.tsx`, `${importPath}/index.ts`, `${importPath}/index.tsx`];
           const found = candidates.some(c => generatedPaths.has(c.toLowerCase()));
           if (!found) {
-            console.warn(`[generate] 참조 무결성 경고: ${filePath} → ${localMatch[1]} (파일 미존재)`);
+            // 중복 방지
+            if (!missingLocalFiles.some(m => m.importPath === importPath)) {
+              missingLocalFiles.push({ importPath, referencedBy: filePath, importAlias: localMatch[1] });
+            }
+          }
+        }
+      }
+
+      // 누락 파일 2차 생성
+      if (missingLocalFiles.length > 0) {
+        console.log(`[generate] 참조 무결성: 누락 파일 ${missingLocalFiles.length}개 발견, 2차 생성 시작`);
+        const foundationStr = [...foundationFiles.entries()].map(([fPath, fCode]) => `=== ${fPath} ===\n${fCode}`).join('\n\n');
+
+        for (const missing of missingLocalFiles) {
+          const filePath = missing.importPath.endsWith('.tsx') || missing.importPath.endsWith('.ts')
+            ? missing.importPath : `${missing.importPath}.tsx`;
+          console.log(`[generate] 2차 생성: ${filePath} (참조: ${missing.referencedBy})`);
+
+          // 참조하는 파일의 import 컨텍스트를 포함
+          const refCode = allGeneratedCode.get(missing.referencedBy) || '';
+          const importLines = refCode.split('\n').filter(l => l.includes(missing.importAlias)).join('\n');
+
+          const secondPassPrompt = `[최우선 규칙] 아래 기반 파일의 타입/필드명을 정확히 따르라. 코드만 출력.
+
+기반 파일:
+${foundationStr || '(없음)'}
+
+이 파일을 import하는 코드:
+${importLines}
+
+참조 파일 전체:
+${refCode.slice(0, 3000)}`;
+
+          try {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': claudeKey, 'anthropic-version': '2023-06-01' },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-6', max_tokens: 12288, system: secondPassPrompt,
+                messages: [{ role: 'user', content: `파일 생성: ${filePath}\n이 컴포넌트는 ${missing.referencedBy}에서 import되어 사용됩니다. 해당 파일의 import 구문과 사용 패턴에 맞는 컴포넌트를 생성하세요.` }],
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const code = stripCodeFence(data.content?.[0]?.text || '');
+              if (code) {
+                const blobRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/blobs`, {
+                  method: 'POST', headers: ghHeaders,
+                  body: JSON.stringify({ content: Buffer.from(code).toString('base64'), encoding: 'base64' }),
+                });
+                if (blobRes.ok) {
+                  const bd = await blobRes.json();
+                  generatedBlobs.push({ path: filePath, sha: bd.sha });
+                  allGeneratedCode.set(filePath, code);
+                  console.log(`[generate] 2차 생성 완료: ${filePath} (${code.length}자)`);
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`[generate] 2차 생성 실패: ${filePath}`, err);
           }
         }
       }
