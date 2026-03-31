@@ -153,11 +153,8 @@ export async function POST(request: NextRequest) {
       VALUES (?, ?, ?, '추출 중...', '', '', 'pending', datetime('now'), datetime('now'))
     `).run(id, trimmedUrl, videoId);
 
-    // 백그라운드에서 분석 시작 (즉시 응답)
-    analyzeInBackground(id, videoId, trimmedUrl, apiKey).catch(err => {
-      console.error('[analyze] 백그라운드 실패:', err);
-      db.prepare("UPDATE link_analyses SET status = 'failed', updated_at = datetime('now') WHERE id = ?").run(id);
-    });
+    // 백그라운드에서 분석 시작 (내부에서 에러 완결 처리)
+    analyzeInBackground(id, videoId, trimmedUrl, apiKey);
 
     return NextResponse.json({ id, status: 'pending', videoId });
   } catch (err) {
@@ -170,8 +167,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
-    const offset = parseInt(searchParams.get('offset') || '0');
     const id = searchParams.get('id');
+    if (id && !/^[0-9a-f-]{36}$/.test(id)) {
+      return NextResponse.json({ error: '잘못된 id 형식' }, { status: 400 });
+    }
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'));
 
     const db = getDb();
 

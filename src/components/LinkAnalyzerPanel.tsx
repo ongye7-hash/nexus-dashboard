@@ -40,12 +40,17 @@ export default function LinkAnalyzerPanel() {
 
   // 선택된 분석이 완료되면 자동 로드
   useEffect(() => {
+    let cancelled = false;
     if (!selectedId) return;
     const selected = analyses.find(a => a.id === selectedId);
     if (selected?.status === 'done' && !selectedAnalysis?.analysis) {
-      handleSelect(selectedId);
+      fetch(`/api/analyze-link?id=${selectedId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (!cancelled && data) setSelectedAnalysis(data.analysis); })
+        .catch(() => {});
     }
-  }, [analyses, selectedId, selectedAnalysis]);
+    return () => { cancelled = true; };
+  }, [analyses, selectedId, selectedAnalysis?.analysis]);
 
   const handleAnalyze = async () => {
     if (!url.trim() || loading) return;

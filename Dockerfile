@@ -34,11 +34,12 @@ FROM node:20-slim AS runner
 # node-pty 런타임 의존성 + yt-dlp (YouTube 자막 추출 fallback)
 RUN apt-get update && apt-get install -y \
     python3 \
-    python3-pip \
     make \
     g++ \
-    ffmpeg \
-    && pip3 install --break-system-packages yt-dlp \
+    curl \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+       -o /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -82,7 +82,14 @@ export interface TranscriptResult {
  * 2) yt-dlp --write-auto-sub (Docker에 설치 시)
  * 3) 실패 시 method='none' 반환 (호출자가 제목+설명으로 분석)
  */
+const SAFE_VIDEO_ID = /^[a-zA-Z0-9_-]{11}$/;
+
 export async function getTranscript(videoId: string): Promise<TranscriptResult> {
+  if (!SAFE_VIDEO_ID.test(videoId)) {
+    console.warn('[youtube] 유효하지 않은 videoId:', videoId);
+    return { text: '', language: '', method: 'none' };
+  }
+
   // === 1차: youtubei.js ===
   try {
     const yt = await Innertube.create();
