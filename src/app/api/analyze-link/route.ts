@@ -6,6 +6,7 @@ import { getSetting } from '@/lib/database';
 import crypto from 'crypto';
 
 const ANALYSIS_PROMPT = (title: string, channel: string, content: string, hasTranscript: boolean) => `너는 비즈니스 분석가이자 스타트업 전략가다.
+오늘 날짜: ${new Date().toISOString().split('T')[0]} — 모든 시장 데이터, 통계, 트렌드는 이 날짜 기준으로 작성하라.
 아래 YouTube 영상${hasTranscript ? '의 자막' : '의 제목과 설명'}을 분석하고, 비즈니스 관점에서 인사이트를 추출하라.
 항상 한국어로 작성하라.
 
